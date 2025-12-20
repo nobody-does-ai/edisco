@@ -1,0 +1,207 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+BEGIN {
+  open(STDERR,">&STDOUT");
+};
+use feature qw(signatures);
+our(@VERSION) = qw( 0 1 0 );
+sub all_lines;
+our(@ref);
+use Tie::Poison;
+use vars qw{
+%file @file $file
+%word @word $word
+%line @line $line
+};
+BEGIN {
+
+  push(@ref, \( our(%file,@file)));
+  push(@ref, \( our(%word,@word)));
+  push(@ref, \( our(%line,@line)));
+  for(@ref) {
+    if(ref($_)eq'HASH'){
+      local(*file)=$_;
+      tie %file, 'Tie::Poison';
+    } elsif(ref($_)eq'ARRAY'){
+      local(*file)=$_;
+      tie @file, 'Tie::Poison';
+    } elsif(ref($_)eq'SCALAR'){
+      local(*file)=$_;
+      tie $file, 'Tie::Poison';
+    };
+  };
+}
+
+our($no);
+{
+  my(@head)=qw(
+  level	page_num	block_num	par_num	line_num	
+  word_num	left	top	width	height	conf	text
+  );
+  our(@line);
+  sub make_word {
+    local($_,@_)=@_;
+    @_=split;
+    local($word)={};
+    local(*word)=$word;
+    for(my $i=0;$i<@head;$i++) {
+      my($head)=$head[$i];
+      $word{$head}=shift;
+    };
+    $word{bot}=$word{top}+$word{height};
+    $word{right}=$word{left}+$word{width};
+    return $word;
+  }
+}
+sub main(@) {
+  local(%file,@file);
+  open(STDOUT,">tsv-lines.log");
+  my($fileno);
+  for( sort glob("tsv/*.tsv") ) {
+    $fileno=$file{$_}=scalar(@file);
+    push(@file,$_);
+  };
+#    
+  my($file,$line,$word);
+  my($state)=0;
+  my(@state)=([1,"inv"],[2,"trans"]);
+  for $file(map{path($_)} @file) {
+    $fileno=$file{$file};
+    local(@word)=grep { m{^5} } $file->lines;
+    $state=1; #reset state for start of page.
+    for(my $i=0;$i<$#word;$i++){
+      for($word[$i]){
+        if(m{INVESTMENTS$}){
+          $state=1;
+        } elsif( m{TRANSACTIONS$} ) {
+          $state=2;
+        }
+        if($state) {
+          local(*word)=make_word($_);
+          push(@{$state[$state]},\%word);
+          $word{fileno}=$fileno;
+        }
+      };
+    };
+  }
+  $state[1]=make_lines($state[1]);
+  $state[2]=make_lines($state[2]);
+  path("fileno.map")->spew(pp(\%file));
+  path("invest.tsv")->spew(pp($state[1]));
+  path("trans.tsv")->spew(pp($state[2]));
+}
+main(@ARGV);
+#        if(0){
+#          $file{$file}=\@word;
+#    
+#          for $no(1 .. @word) {
+#            ($word,$word[$no-1])=($word[$no-1],undef);
+#            for($word){
+#              } else {
+#                $word[$no-1]=undef;
+#              };
+#            };
+#          };
+#          @word=grep{defined}@word;
+#          @word=sort {
+#            int($a->{top}/3) <=> int($b->{top}/3)
+#              or
+#            $a->{left} <=> $b->{left}
+#          } @word;
+#          our(@page);
+#          while(@word) {
+#            my($bot,$top);
+#            $_=[\$bot,\$top];
+#            push(@page,$_);
+#            local(*line)=$_;
+#            while(@word) {
+#              $bot//=$word[0]{bot};
+#              $top//=$word[0]{top};
+#              if($word[0]{top}>$bot) {
+#                say "BREAK: $word[0]{text}";
+#                last;
+#              };
+#              local(*word)=shift(@word);
+#              push(@line,\%word);
+#              $bot=$word{bot} if $bot<$word{bot};
+#            }
+#            splice(@line,0,2);
+#            @line=sort { $a->{left} <=> $b->{left} } @line;
+#            unshift(@line,$bot,$top);
+#          };
+#          ddx(\@page);
+#        };
+#      };
+#    };
+#            my($top,$bot);
+#            push(@line,\%line);
+#            local(@line)=$word;
+#    #            ddx(\%line);
+#            say ref($line[$#line]);
+#            local(*line)=$line[$#line];
+#            say refaddr(\@line);
+#            while(@word) {
+#              local(*word)=shift(@word);
+#    #              last unless $word{top}<=$bot;
+#              $bot=$word{bot} if $bot<$word{bot};
+#              push(@line,\%word);
+#            };
+#            eex(\%line);
+#            eex($line{top},$line{bot});
+#          };
+#        }
+#      }
+#    };
+#    for(glob("tsv/*.tsv"));
+#    ddx(\@_);
+#    sub all_lines {
+#      local(@_)=@_;
+#      return map { all_lines($_) } @_ unless 1==@_;
+#      local($_)=path($_[0]);
+#      $_=[$_->lines];
+#      my(%keep)=map { $_, 1 } qw(text left width height conf level top page);
+#      my(@head)=map { split } shift(@$_);
+#      {
+#        local(*_)=$_;
+#        for(@_) {
+#          my(%word);
+#          @word{@head}=split;
+#          for(keys %word) {
+#            delete $word{$_} unless $keep{$_};
+#          };
+#          $word{bottom}=$word{top}+delete $word{height};
+#          $word{right}=$word{left}+delete $word{width};
+#          $_=\%word;
+#        };
+#        @_=grep { $_->{level}==5 } @_;
+#        @_=sort {
+#          $a->{top} <=> $b->{top}
+#            or
+#          $a->{left} <=> $b->{left}
+#        } @_;
+#        my($line);
+#        my(@page)=$line;
+#        my($top)=-1;
+#        my($bot)=-1;
+#        for(@_){
+#          if($_->{top}>$bot){
+#            push(@page,$line=[]);
+#            $top=$_->{top};
+#            $bot=$_->{bottom};
+#          } elsif ($_->{bottom}>$bot) {
+#            $bot=$_->{bottom};
+#          };
+#        };
+#        @_=@page;
+#      }
+#      @$_;
+#    };
+#    
+#    

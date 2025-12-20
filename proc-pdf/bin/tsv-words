@@ -1,0 +1,30 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+sub all_words;
+@_=all_words(glob("tsv/*.tsv"));
+
+sub all_words {
+  local(@_)=@_;
+  return map { all_words($_) } @_ unless 1==@_;
+  local($_)=path($_[0]);
+  local(@_)=$_->lines;
+  my(@r);
+  for(@_) {
+    local(@_) = split;
+    next unless $_[0] == 5;
+    eex(\@_);
+    push(@r,pop);
+  };
+  @r=sort @r;
+  @r;
+};
+
+

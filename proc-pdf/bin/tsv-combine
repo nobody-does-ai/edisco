@@ -1,0 +1,270 @@
+#!/usr/bin/perl
+#    BEGIN {
+#    require "$ENV{HOME}/stow/ex-code/gather.pl";
+#    }
+open(STDOUT,">&STDERR");
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+BEGIN {
+  use FindBin qw($Script $Bin);
+  use lib "$Bin/../lib";
+};
+
+use Tk;
+
+#    use Tie::StdHandle;
+#    tie *STDOUT, 'Tie::StdHandle';
+use Carp::Always;
+
+use vars (@var);
+use Carp qw( cluck confess croak carp );
+use GD::Image;
+use GD;
+use List::Util qw();
+use List::Util @List::Util::EXPORT_OK;
+use Nobody::PP;
+use Nobody::Util;
+use TsvFile;
+use TsvGroup;
+use TsvRect;
+use TsvWord;
+use TsvUtil qw( pdf_to_png png_to_tsv pdf_to_pgs pdf_page_count );
+use Tk;
+use Tk::PNG; 
+use autodie;
+use common::sense;
+use feature qw(state);
+our(@VERSION) = qw( 0 1 0 );
+our(%file);
+
+sub main;
+sub make_color_iterator;
+my $colors = make_color_iterator;
+main(@ARGV);
+exit(0);
+# We use GD::Simple strictly for its internal color name map
+use GD::Simple; 
+use GD::Image;
+
+sub make_color_iterator {
+    # High contrast, distinct colors for easy visual debugging
+    my @colors = qw(
+        red green blue cyan magenta yellow 
+        orange purple brown pink lime teal 
+        gold silver violet indigo maroon navy
+    );
+    my $idx = 0;
+
+    return sub {
+        my $color = $colors[$idx++];
+        $idx=0 if $idx>=@colors;
+        return $color;
+    };
+}
+# --- Helper: Accepts Name ("red"), Hex ("#ff0000"), or Array ([255,0,0]) ---
+# Returns the integer index required by GD::Image
+sub x_get_color_index {
+  my ($im, $color_req) = @_;
+  my ($r, $g, $b);
+
+  # 1. Hex: "#ff0000"
+  if (!ref($color_req) && $color_req =~ /^#?([a-f0-9]{2})([a-f0-9]{2})([a-f0-9]{2})$/i) {
+    ($r, $g, $b) = (hex($1), hex($2), hex($3));
+  }
+  # 2. Name: "red"
+  elsif (!ref($color_req) && $color_req =~ /^[a-z]+$/i) {
+    # Fix: Create a persistent dummy object to satisfy the method's instance requirement
+    state $dummy_simple = GD::Simple->new(1, 1);
+    
+    my @rgb = $dummy_simple->translate_color($color_req);
+    return 0 unless @rgb; 
+    ($r, $g, $b) = @rgb;
+  }
+  # 3. Array Ref: [255, 0, 0]
+  elsif (ref($color_req) eq 'ARRAY') {
+    ($r, $g, $b) = @$color_req;
+  }
+  # 4. Default: Black
+  else {
+    ($r, $g, $b) = (0, 0, 0);
+  }
+
+  # colorResolve handles allocation or approximation automatically
+  return $im->colorResolve($r, $g, $b);
+}
+sub get_color_index {
+  if(wantarray){
+    local(@_)=x_get_color_index(@_);
+    return @_;
+  } elsif(defined(wantarray)){
+    local($_)=x_get_color_index(@_);
+    return $_;
+  } else {
+    say "warning void";
+    x_get_color_index(@_);
+  };
+};
+sub render {
+  my ($page,$label_callback) = @_;
+  ddx($page);
+  my (%page)=%{$page};
+  my (@word)=@{$page->{file}->atsv};
+  my ($pngo)=$page{pngo};
+  my ($pngn)=$page{pngn}; 
+  # 2. Initialize GD
+  my $im = GD::Image->newFromPng($pngo, 1);
+  
+  # 3. Draw word
+  for my $w (@word) {
+    my ($rect) = $w->rect;
+    
+    # Logic for Label vs Callback
+    my $label="xxxx";
+    my $color_req=$colors->();
+    # Resolve the requested color to an index
+    my $color_idx = get_color_index($im, $color_req);
+
+#        $im->filledRectangle($w->left, $w->top, $w->right, $w->bottom, $im->colorResolve(255,255,0));
+    if ($w->can("word")) {
+      # Draw Text using the resolved index
+      $im->string(gdSmallFont, $w->left + 2, $w->top - 10, $label, $color_idx);
+      
+      # Optional: Draw Box
+      # $im->rectangle($rect->left, $rect->top, $rect->right, $rect->bottom, $color_idx);
+    }
+  }
+
+  return $im;
+}
+
+sub rend_file($) {
+  my($file,$pngn,$pngo)=@_;
+  my (%page);
+  for($file){
+    my($path)=TsvPath->new($_);
+    die "mismatch" unless @_;
+    $path->dir("out");
+    $path->ext("png");
+    $page{pngn}=$path->path;
+    $path->dir("img");
+    $page{pngo}=$path->path;
+  };
+  $page{file} = safe_isa($file,"TsvFile")?$file:TsvFile->new($file);
+  my ($image) = render(
+    \%page, 
+    sub { return "XXXXXXX" }
+  );
+  ddx( ref($page{file}) );
+  die "failed to render" unless defined $image;
+  path($page{pngn})->touchpath->spew($image->png);
+  return \%page;
+};
+sub main {
+  my(@file) = map{path($_)} glob("src/*.pdf");
+  @file=map { path($_) } pdf_to_pgs(@file);
+  @file=pdf_to_png(@file);
+  @file=png_to_tsv(@file);
+  for my $file (@file) {
+    my($page)=rend_file($file);
+    my($pngo,$pngn,$word)=@{$page}{ qw( pngo pngn word ) };
+    my(@word)=@$word;
+    # 1. Create a NEW Main Window
+    my $mw = MainWindow->new;
+    build($mw,$pngn,@word);
+    $mw->title("Viewing: $file");
+
+    # 2. Bind Return to DESTROY (not exit)
+    # This kills the window, causing MainLoop to finish this iteration
+    $mw->bind('<Return>', sub { 
+        $mw->destroy; 
+      });
+
+    # 3. Bind Escape/Ctrl-Q to EXIT the whole script
+    $mw->bind('<Control-q>', sub { exit });
+
+    
+
+    # 4. Enter the loop
+    # The script pauses here. It wakes up and continues ONLY after 
+    # $mw is destroyed.
+    MainLoop;
+
+    print "Finished with $file, moving to next...\n";
+  }
+}
+
+
+sub build {
+  my($mw,$pngn,@word)=@_;
+  # 2. Load Image & Create Canvas
+  # We load the photo first so we can ask for its size
+  my $photo = $mw->Photo(-file => $pngn);
+
+  my $canvas = $mw->Canvas(
+    -width  => $photo->width,
+    -height => $photo->height,
+    -bg     => 'gray',
+    -cursor => 'crosshair',
+  )->pack(-side => 'bottom', -anchor => 'nw');
+
+  $canvas->createImage(0, 0, -image => $photo, -anchor => 'nw');
+
+  $canvas->CanvasBind("<Button-1>", sub {
+      my ($c) = @_;
+      my ($text);
+      my ($e) = $c->XEvent; 
+      ddx($e);
+      # Get click location
+      my $x = $e->canvasx($e->x);
+      my $y = $e->canvasy($e->y);
+
+      my $found = 0;
+      for my $w (@word) {
+        my $r = $w->rect;
+
+        if ($x >= $r->left && $x <= $r->right && 
+          $y >= $r->top  && $y <= $r->bottom) {
+
+          $text = $w->text;
+
+          # Highlight
+          $canvas->delete("highlight");
+          $canvas->createRectangle(
+            $r->left, $r->top, $r->right, $r->bottom,
+            -outline => colors->(),
+            -width   => 2,
+            -tags    => "highlight"
+          );
+
+          $found = 1;
+          last;
+        }
+      }
+
+      unless ($found) {
+        $text = "";
+        $canvas->delete("highlight");
+      }
+    });
+}
+
+#    sub xxx {
+#      my $mw = MainWindow->new;
+#      $mw->title("Financial Table Inspector: $file");
+#    
+#      # 1. The Data Entry Bar (Top)
+#      my $clicked_text = "Click a word...";
+#      my $top_frame = $mw->Frame()->pack(-side => 'top', -fill => 'x');
+#    
+#      $top_frame->Label(-text => "Text:", -font => ['Helvetica', 10, 'bold'])
+#      ->pack(-side => 'left', -padx => 5);
+#    
+#      $top_frame->Entry(
+#        -textvariable => \$clicked_text,
+#        -font => ['Courier', 14], 
+#        -width => 40,
+#        -bg => 'white',
+#      )->pack(-side => 'left', -fill => 'x', -expand => 1, -padx => 5, -pady => 5);
+#    }

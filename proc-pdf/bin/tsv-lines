@@ -1,0 +1,178 @@
+#!/opt/bin/vi-perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use JSON::XS;
+use Tie::StdHandle;
+
+BEGIN {
+  open(STDERR,">&STDOUT");
+};
+BEGIN {
+  package BreakHandle;
+  use Tie::StdHandle;
+  our(@ISA)=qw(Tie::StdHandle);
+  sub WRITE {
+    $DB::single++;
+    goto \&Tie::StdHandle::WRITE;
+  };
+  tie *STDOUT, 'BreakHandle';
+};
+my($coder) = JSON::XS->new->ascii->pretty->allow_nonref->allow_blessed;
+use feature qw(signatures);
+our(@VERSION) = qw( 0 1 0 );
+sub all_lines;
+our(@ref);
+use Tie::Poison;
+use vars qw{
+%file @file $file
+%word @word $word
+%line @line $line
+};
+our(%file,@file);
+our(%word,@word);
+our(%line,@line);
+require "$ENV{PWD}/lib/render.pl";
+our($no);
+{
+  package Rect;
+}
+{
+  package Word;
+  our(@ISA)=qw(Rect);
+  use Nobody::Util qw( ddx class );
+  my(@head);
+  my(%dead);
+  BEGIN {
+    @head=qw(
+    level	page_num	block_num	par_num	line_num	
+    word_num	left	top	width	height	conf	text
+    );
+  };
+  BEGIN {
+    use subs @head;
+    sub mk_acc {
+      my($name)=shift;
+      my($sub)=sub {
+        my($self)=shift;
+        $self->{$name}=shift if @_;
+        $self->{$name};
+      };
+      return $sub;
+    };
+  };
+  our($bottom,$top);
+  sub height {
+    my($self)=shift;
+    my($R,$L)=\($self->{bottom},$self->{top});
+    if(@_){
+      my($W,$X)=map{$_/2} (shift,$$L+$$R);
+      ($$R,$$L)=($X+$W,$X-$W);
+    };
+    $$R-$$L;
+  };
+  sub width {
+    my($self)=shift;
+    my($R,$L)=\($self->{right},$self->{left});
+    if(@_){
+      my($W,$X)=map{$_/2} (shift,$$L+$$R);
+      ($$R,$$L)=($X+$W,$X-$W);
+    };
+    $$R-$$L;
+  };
+  BEGIN {
+    no strict 'refs';
+    for my $attr (@head, qw(bottom right)) {
+      *{__PACKAGE__ . "::$attr"} = mk_acc($attr);
+    }
+  }
+  our(@line);
+  sub new {
+    my($class)=class(shift);
+    my($page_num)=shift;
+    local(@_)=map{split}shift;
+    local(%word);
+    my($self)=\%word;
+    for(my $i=0;$i<@head;$i++) {
+      $word{$head[$i]}=$_[$i];
+    };
+    $word{page_num}=$page_num;
+    $word{bottom}=$word{top}+delete $word{height};
+    $word{right}=$word{left}+delete $word{width};
+    bless($self,$class);
+    $self;
+  }
+}
+our(@lines);
+sub group_words {
+  my(@group,%group);
+  my(@word)=@_;
+  my(@top)=uniq(map { $_->{top} } @word);
+};
+our(%file);
+sub handle_file {
+  my($file,$page)=@_;
+  $DB::single=1;
+  my(@gs);
+  local(*_)=$file{$_}{word}=[];
+  local(@_)=grep /^5/, path($_)->lines;
+  $_=Word->new($page,$_) for @_;
+  ++$page;
+  @_=sort { $a->top <=> $b->top } @_;
+  my($B)=scalar @_;
+  for(@_) {
+    say "$_";
+  };
+  while(@_) {
+    last if $_[0]->text eq 'INVESTMENTS';
+    shift;
+  };
+  my($A)=scalar @_;
+  shift if(@_);
+  my($bottom)=$_[0]->bottom;
+  while(@_) {
+    my(@group);
+    say scalar(@_);
+    $bottom=$_[0]->bottom;
+    while(@_ and $bottom>=$_[0]->top){
+      $bottom=max($bottom,$_[0]->bottom );
+      push(@group,shift(@_));
+    };
+    if(@gs>1) {
+      @group = sort { $a->left <=> $b->left } @group;
+      eex( map { $group[$_]->text } qw( -1 -2 -3 ) );
+      if($group[-1]) {
+        $group[0]->left(min(map {$_->left} @group));
+        $group[0]->right(max(map {$_->left} @group));
+        $group[0]->text(join(" ",map{$_->text} @group));
+        @group = map { { %{$_} } } @group[0];
+      } else {
+        @group = map { { %{$_} } } @group;
+      };
+      push(@gs,[@group]);
+    };
+  }
+};
+sub main(@) {
+  local(@file);
+  my($fileno);
+  local(@lines);
+  @file=splice(@_);
+  @file=sort glob("inv/*.tsv");
+  for(0..-1+@file){
+    $file{$file[$_]}{num}=$_;
+  };
+  my($file,$line,$word);
+  my($top,$bottom);
+  my($page)=0;
+  for(@file) {
+    $file{$_}{group}=handle_file($page++,$_);
+  };
+  path("inv/invest.json")->spew($coder->encode([\@file,\%file]));
+}
+main(@ARGV);

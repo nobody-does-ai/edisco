@@ -1,0 +1,156 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;   # exports path
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+
+sub main (@) {
+    # Move to project root: path(__FILE__)->parent->parent
+    my $root = path(__FILE__)->absolute->parent->parent;
+    chdir $root or die "Cannot chdir to project root $root: $!";
+
+    my $src_dir = path('pgs');
+    my $img_dir = path('img');
+    my $tsv_dir = path('tsv');
+
+    # Ensure directories exist
+    $src_dir->is_dir or die "src/ directory not found at $src_dir\n";
+    $img_dir->mkpath;
+    $tsv_dir->mkpath;
+
+    my @args = @_;
+    my @pdfs;
+
+    # No args: process all PDFs in src/
+    @pdfs = sort $src_dir->children(qr/\.pdf$/i);
+
+    die "No PDFs found in src/\n" unless @pdfs;
+
+    for my $pdf_path (@pdfs) {
+      unless ($pdf_path->is_file) {
+        warn "Skipping '$pdf_path': not a regular file\n";
+        next;
+      }
+      process_pdf($pdf_path, $img_dir, $tsv_dir);
+    }
+}
+
+# Run an external command, and if it died due to SIGINT, bail out immediately.
+sub run_cmd_or_die_on_sigint {
+    my (@cmd) = @_;
+
+    # Ignore SIGINT in the parent while the child runs;
+    # we’ll infer interruption from the child’s exit status.
+    local $SIG{INTR} = 'IGNORE';
+
+    system @cmd;
+
+    if ($? == -1) {
+        warn "failed to execute @cmd: $!\n";
+        return $?;
+    }
+
+    if ($? & 127) {
+      die "Command '@cmd' died with signal\n";
+    } elsif (my $exit = $? >> 8) {
+      # Non-zero exit status, but not SIGINT – treat as a normal failure.
+      die "Command '@cmd' exited with status $exit\n";
+    }
+
+    return $?;
+}
+
+sub process_pdf {
+    my ($pdf_path, $img_dir, $tsv_dir) = @_;
+
+    my $pdf  = $pdf_path->stringify;
+    my $base = $pdf_path->basename('.pdf');
+
+    print STDERR "==> Processing $pdf\n";
+
+    my $page_count = get_page_count($pdf);
+    unless (defined $page_count && $page_count > 0) {
+        warn "Could not determine page count for '$pdf', skipping.\n";
+        return;
+    }
+
+    my $last_page = $page_count;
+    $last_page = $page_count if $last_page < 1;
+
+    print STDERR "    Pages: $page_count (using 1..$last_page)\n";
+
+    # 1. Render selected pages to PNG (document-at-a-time)
+    my $img_prefix = $img_dir->child($base)->stringify;
+
+    my @cmd = (
+        'pdftoppm',
+        '-png',
+        '-r', 300,
+        '-f', 1,
+        '-l', $last_page,
+        $pdf,
+        $img_prefix,
+    );
+    print STDERR "    Running: @cmd\n";
+    run_cmd_or_die_on_sigint(@cmd);
+
+    # 2. Build page_number -> PNG path map, handling zero-padding
+    my %png_for_page;
+    for my $png ($img_dir->children(qr/^\Q$base\E-\d+\.png$/)) {
+        my $name = $png->basename;
+        next unless $name =~ /^\Q$base\E-(\d+)\.png$/;
+        my $pageno = int($1);  # '01' -> 1, '10' -> 10, etc.
+        $png_for_page{$pageno} = $png;
+    }
+
+    # 3. For each expected page, run tesseract -> TSV
+    for my $page (1 .. $last_page) {
+        my $png = $png_for_page{$page};
+
+        unless ($png && $png->is_file) {
+            warn "    Missing PNG for $pdf page $page (expected $base-<n>.png)\n";
+            next;
+        }
+
+        my $tsv_prefix = $tsv_dir->child("$base-$page")->stringify;
+        my $tsv_file   = $tsv_prefix . '.tsv';
+
+        # Skip if TSV already exists; comment this out if you want to re-run
+        if (-f $tsv_file) {
+            print STDERR "    [exists] $tsv_file\n";
+            next;
+        }
+
+        my @tcmd = (
+            'tesseract',
+            $png->stringify,
+            $tsv_prefix,
+            '-l', 'eng',
+            'tsv',
+        );
+        print STDERR "    tesseract page $page -> $tsv_file\n";
+        run_cmd_or_die_on_sigint(@tcmd);
+    }
+}
+
+sub get_page_count {
+    my ($pdf) = @_;
+
+    my @cmd = ('pdfinfo', $pdf);
+    my $info = qx/@cmd 2>&1/;
+    if ($? != 0) {
+        warn "pdfinfo failed on '$pdf': $info";
+        return undef;
+    }
+
+    my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
+    return $pages_line ? int($pages_line) : undef;
+}
+
+# Pipeline driver entry point
+main(@ARGV);

@@ -1,0 +1,148 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use ProcPdf::Util;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;   # exports path
+use Nobody::PP;
+use PDF::API2;
+our(@VERSION) = qw( 0 1 0 );
+my ($pdf_re)=qr{[.]pdf$};
+my ($tsv_re)=qr{[.]tsv$};
+
+sub logf(@) {
+  local($_,@_)=@_;
+  $_=sprintf($_,@_);
+  while(chomp){
+    1;
+  };
+  say STDERR;
+};
+sub main (@) {
+  # chdir to project root (bin/..)
+  my $root = path(__FILE__)->absolute->parent->parent;
+  chdir $root or die "Cannot chdir to project root $root: $!";
+
+  my $tsv_dir = path('tsv');
+  my $out_dir = path('out');
+  $tsv_dir->is_dir or die "tsv/ directory not found at $tsv_dir\n";
+  $out_dir->mkpath;
+  my $output_pdf=$out_dir->child("debug.$$.pdf")->stringify;
+  {
+    local(@_)=grep /$pdf_re/, @_;
+    die "too many pdf's on command line!" if @_>1;
+    $output_pdf = shift(@_) if @_;
+  };
+  die "$output_pdf exists" if path($output_pdf)->exists;
+
+  my @tsv_files;
+  # Collect all TSVs
+  {
+    my(@tsv_fails);
+    if(@_) {
+      say "NO-ARGS";
+      @tsv_files = sort map { path($_) } grep /$tsv_re/, @_;
+    } else {
+      say "ARGS";
+      @tsv_files = sort $tsv_dir->children($tsv_re);
+    };
+    say scalar(@tsv_files);
+    die unless (grep { ref } @tsv_files) ==@tsv_files;
+    my @tsv_fails = grep { !$_->exists } @tsv_files;
+    say "missing file: ", $_ for @tsv_fails;
+    die "No TSV files found in $tsv_dir\n" if @tsv_fails;
+  };
+
+  logf "Writing %s from %d TSV files", $output_pdf, scalar(@tsv_files), 
+
+  my $pdf        = PDF::API2->new(-file => $output_pdf);
+  my $font       = $pdf->corefont('Helvetica', -encoding => 'latin1');
+  my $font_size  = 10;
+#      my $line_height = 12;
+
+  my $page;
+  my $text;
+  my $y;
+  my $margin = 36;    # 0.5" margin
+  my $bottom = 36;    # bottom margin
+  my $page_width  = 612;  # 8.5 * 72
+  my $page_height = 792;  # 11 * 72
+
+  my $new_page = sub {
+    $page = $pdf->page;
+    $page->mediabox($page_width, $page_height);
+    $text = $page->text;
+    $text->font($font, $font_size);
+    $y = $page_height - $margin;
+  };
+
+  my $emit_line = sub {
+    my ($line) = @_;
+    # new page if we've gone too low
+    if (!defined $page || $y <= $bottom) {
+      $new_page->();
+    }
+    $text->translate($margin, $y);
+    $text->text($line);
+#        $y -= $line_height;
+  };
+
+  # Walk TSV files in lexical order
+  for my $tsv_path (@tsv_files) {
+    my $base = $tsv_path->basename;
+
+    my @lines = extract_words_from_tsv($tsv_path);
+    ddx( \@lines );
+    next unless @lines;
+
+    # Optional visual separator per TSV source
+    $emit_line->("===== $base =====");
+    for my $line (@lines) {
+      $emit_line->($line);
+    }
+    $emit_line->("");  # blank line between files
+  }
+
+  $pdf->save;
+  logf "Wrote %s", $output_pdf;
+}
+
+my (%need) = map { $_, 1 } qw/level block_num par_num line_num left text/;
+sub extract_words_from_tsv {
+  my ($tsv_path) = @_;
+  my ($idx,%idx,@idx)=0;
+  my (%need)=%need;
+  my(@lines)=path($tsv_path)->lines;
+  my(@words);
+  for($lines[0]) {
+    @idx = split;
+    for(@idx) {
+      delete $need{$_};
+      $idx{$_}=++$idx;
+    };
+  };
+  die "missing cols: ", join(" ", keys %need) if scalar keys %need;
+
+  our(@w);
+  for(@lines) {
+    chomp;
+    next unless /\S/;
+    ddx($_);
+    my @f = split;
+    my(%w) = map { $_, shift(@f) } @idx;
+    push(@w,\%w);
+  }
+
+  return @w;
+}
+
+main(@ARGV);
