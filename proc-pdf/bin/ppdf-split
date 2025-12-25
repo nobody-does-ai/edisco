@@ -35,6 +35,7 @@ sub main (@) {
 
   my($fmt)="img/%s-%03d.pdf";
   my ($op)=0;
+  my $pp=0;
   for(sort keys %pages) {
     my ($if)=path($_);
     my ($pc)=$pages{$_};

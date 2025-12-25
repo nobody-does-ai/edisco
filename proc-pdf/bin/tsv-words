@@ -9,19 +9,29 @@ use Nobody::Util;
 use Nobody::PP;
 our(@VERSION) = qw( 0 1 0 );
 sub all_words;
+my ( @label ) = qw(
+level	page_num	block_num	par_num	line_num	word_num
+left	top	width	height
+conf	text
+);
+my @type=map { m{(.*)_num} } @label[1..5];
+eex( \@type, \@label );
 @_=all_words(glob("tsv/*.tsv"));
+ddx( \@_ );
+say scalar(@_);
+exit(0);
 
 sub all_words {
   local(@_)=@_;
   return map { all_words($_) } @_ unless 1==@_;
+  ddx( \@_ );
   local($_)=path($_[0]);
   local(@_)=$_->lines;
   my(@r);
   for(@_) {
-    local(@_) = split;
-    next unless $_[0] == 5;
-    eex(\@_);
-    push(@r,pop);
+    my(%obj);
+    @obj{@label}=split;
+    push(@r,\%obj);
   };
   @r=sort @r;
   @r;

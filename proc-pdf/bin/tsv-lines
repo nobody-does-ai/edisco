@@ -18,7 +18,7 @@ BEGIN {
   use Tie::StdHandle;
   our(@ISA)=qw(Tie::StdHandle);
   sub WRITE {
-    $DB::single++;
+#        $DB::single++;
     goto \&Tie::StdHandle::WRITE;
   };
   tie *STDOUT, 'BreakHandle';
@@ -117,7 +117,6 @@ sub group_words {
 our(%file);
 sub handle_file {
   my($file,$page)=@_;
-  $DB::single=1;
   my(@gs);
   local(*_)=$file{$_}{word}=[];
   local(@_)=grep /^5/, path($_)->lines;
@@ -134,6 +133,8 @@ sub handle_file {
   };
   my($A)=scalar @_;
   shift if(@_);
+  @_=grep { defined } @_;
+  return unless @_;
   my($bottom)=$_[0]->bottom;
   while(@_) {
     my(@group);
@@ -158,12 +159,12 @@ sub handle_file {
     };
   }
 };
-sub main(@) {
+sub main {
   local(@file);
   my($fileno);
   local(@lines);
   @file=splice(@_);
-  @file=sort glob("inv/*.tsv");
+  @file=sort glob("tsv/*.tsv");
   for(0..-1+@file){
     $file{$file[$_]}{num}=$_;
   };
@@ -173,6 +174,6 @@ sub main(@) {
   for(@file) {
     $file{$_}{group}=handle_file($page++,$_);
   };
-  path("inv/invest.json")->spew($coder->encode([\@file,\%file]));
+  path("inv/invest.json")->touchpath->spew($coder->encode([\@file,\%file]));
 }
 main(@ARGV);

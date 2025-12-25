@@ -3,52 +3,60 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
+use lib "lib";
 use common::sense;
 use autodie;
 use Nobody::Util;   # exports path
+use Carp::Always;
 use Nobody::PP;
+use TsvFile;
 our(@VERSION) = qw( 0 1 0 );
-
 sub main (@) {
-    # Move to project root: path(__FILE__)->parent->parent
-    my $root = path(__FILE__)->absolute->parent->parent;
-    chdir $root or die "Cannot chdir to project root $root: $!";
+  # Move to project root: path(__FILE__)->parent->parent
+  my $root = path(__FILE__)->absolute->parent->parent;
+  say "root: $root";
+  chdir $root or die "Cannot chdir to project root $root: $!";
 
-    my $src_dir = path('pgs');
-    my $img_dir = path('img');
-    my $tsv_dir = path('tsv');
+  my $src_dir = path('src');
+  my $img_dir = path('img');
+  my $tsv_dir = path('tsv');
 
-    # Ensure directories exist
-    $src_dir->is_dir or die "src/ directory not found at $src_dir\n";
-    $img_dir->mkpath;
-    $tsv_dir->mkpath;
+  # Ensure directories exist
+  $src_dir->is_dir or die "$src_dir directory not found at $src_dir";
+  $img_dir->mkpath;
+  $tsv_dir->mkpath;
 
-    my @args = @_;
-    my @pdfs;
+  my @args = @_;
+  my @pdfs;
 
-    # No args: process all PDFs in src/
-    @pdfs = sort $src_dir->children(qr/\.pdf$/i);
+  # No args: process all PDFs in src/
+  @pdfs = sort $src_dir->children(qr/\.pdf$/i);
 
-    die "No PDFs found in src/\n" unless @pdfs;
-
-    for my $pdf_path (@pdfs) {
-      unless ($pdf_path->is_file) {
-        warn "Skipping '$pdf_path': not a regular file\n";
-        next;
-      }
-      process_pdf($pdf_path, $img_dir, $tsv_dir);
+  die "No PDFs found in src/\n" unless @pdfs;
+  my (%pid);
+  for my $pdf_path (@pdfs) {
+    unless ($pdf_path->is_file) {
+      warn "Skipping '$pdf_path': not a regular file\n";
+      next;
     }
+    process_pdf($pdf_path, $img_dir, $tsv_dir);
+  }
+  for(keys %pid){
+    $pid{$pid{$_}}=$_;
+  };
+  while(scalar(%pid)){
+    ddx(\%pid);
+    my ($pid)=waitpid(0,0);
+    say $pid;
+    delete $pid{$pid{$pid}};
+    delete $pid{$pid};
+  };
 }
 
 # Run an external command, and if it died due to SIGINT, bail out immediately.
 sub run_cmd_or_die_on_sigint {
-    my (@cmd) = @_;
-
-    # Ignore SIGINT in the parent while the child runs;
-    # we’ll infer interruption from the child’s exit status.
-    local $SIG{INTR} = 'IGNORE';
-
-    system @cmd;
+  my(@cmd)=@_;
+  return system @cmd or die "system: @cmd: $?";
 
     if ($? == -1) {
         warn "failed to execute @cmd: $!\n";
@@ -69,13 +77,13 @@ sub process_pdf {
     my ($pdf_path, $img_dir, $tsv_dir) = @_;
 
     my $pdf  = $pdf_path->stringify;
-    my $base = $pdf_path->basename('.pdf');
+    my $base = $pdf_path->basename('.pdf').'-';
 
     print STDERR "==> Processing $pdf\n";
 
     my $page_count = get_page_count($pdf);
     unless (defined $page_count && $page_count > 0) {
-        warn "Could not determine page count for '$pdf', skipping.\n";
+        die "Could not determine page count for '$pdf', skipping.\n";
         return;
     }
 
@@ -86,7 +94,18 @@ sub process_pdf {
 
     # 1. Render selected pages to PNG (document-at-a-time)
     my $img_prefix = $img_dir->child($base)->stringify;
-
+    eex( $img_prefix );
+    {
+      my(@list)=$img_dir->children(qr/^\Q$base\E-\d+\.png$/);
+      eex(@list);
+      return;
+    }
+    my(@list) = glob("$img_prefix*.png");
+    for(@list) {
+      s{[.]png$}{};
+    };
+    eex( \@list );
+    exit(0);
     my @cmd = (
         'pdftoppm',
         '-png',
@@ -97,7 +116,8 @@ sub process_pdf {
         $img_prefix,
     );
     print STDERR "    Running: @cmd\n";
-    run_cmd_or_die_on_sigint(@cmd);
+    system(@cmd);
+    die "@cmd: $?" if $?;
 
     # 2. Build page_number -> PNG path map, handling zero-padding
     my %png_for_page;
@@ -134,22 +154,22 @@ sub process_pdf {
             'tsv',
         );
         print STDERR "    tesseract page $page -> $tsv_file\n";
-        run_cmd_or_die_on_sigint(@tcmd);
+run_cmd_or_die_on_sigint(@tcmd);
     }
 }
 
 sub get_page_count {
-    my ($pdf) = @_;
+  my ($pdf) = @_;
 
-    my @cmd = ('pdfinfo', $pdf);
-    my $info = qx/@cmd 2>&1/;
-    if ($? != 0) {
-        warn "pdfinfo failed on '$pdf': $info";
-        return undef;
-    }
+  my @cmd = ('pdfinfo', $pdf);
+  my $info = qx/@cmd 2>&1/;
+  if ($? != 0) {
+    warn "pdfinfo failed on '$pdf': $info";
+    return undef;
+  }
 
-    my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
-    return $pages_line ? int($pages_line) : undef;
+  my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
+  return $pages_line ? int($pages_line) : undef;
 }
 
 # Pipeline driver entry point
