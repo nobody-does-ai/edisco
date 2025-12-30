@@ -1,0 +1,54 @@
+#!/usr/bin/env perl
+use common::sense;
+use DBI;
+
+# Usage: export_smms_by_days.pl MIN_DAYS MAX_DAYS > out.tsv
+my ($min_days, $max_days) = @ARGV;
+die "Usage: $0 MIN_DAYS MAX_DAYS\n"
+    unless defined $min_days && defined $max_days;
+
+($min_days, $max_days) = sort { $a <=> $b } ($min_days + 0.0, $max_days + 0.0);
+die "MIN_DAYS must be <= MAX_DAYS\n" if $min_days > $max_days;
+
+# DB connection (tweak or override with env vars)
+my $dsn  = $ENV{PG_DSN}  // 'dbi:Pg:dbname=sms';
+my $user = $ENV{PG_USER} // '';
+my $pass = $ENV{PG_PASS} // '';
+
+my $dbh = DBI->connect($dsn, $user, $pass, {
+    RaiseError => 1,
+    AutoCommit => 1,
+});
+
+# We pre-filter roughly on signed days_ago to avoid pulling the whole table,
+# but the real "abs in range" check happens in Perl.
+my $sql = q{
+    select kind, ts, peer, days_ago, text
+    from smms_readable
+    where days_ago between ? and ?
+    order by ts
+};
+
+my $sth = $dbh->prepare($sql);
+$sth->execute($max_days, $max_days);  # symmetric band around now
+
+# Header (optional – remove if you don't want it)
+say join "\t", qw(ts peer days_ago kind text);
+
+while (my $row = $sth->fetchrow_hashref) {
+    my $days = $row->{days_ago} // 0;
+    my $abs  = abs($days);
+
+    next if $abs < $min_days || $abs > $max_days;
+
+    my $ts   = $row->{ts}   // '';
+    my $peer = $row->{peer} // '';
+    my $kind = $row->{kind} // '';
+    my $text = $row->{text} // '';
+
+    # Keep days_ago positive in output, as requested
+    my $days_str = sprintf('%.6f', $abs);
+
+    # Very simple TSV; if you ever need escaping we can add it later.
+    say join "\t", $ts, $peer, $days_str, $kind, $text;
+}

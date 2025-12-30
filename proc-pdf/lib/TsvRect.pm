@@ -1,6 +1,7 @@
 package TsvRect;
 use common::sense;
 use Scalar::Util qw(refaddr);
+use lib "lib";
 BEGIN { open(STDOUT,">&STDERR"); };
 BEGIN {
   use FindBin qw($Script $Bin);

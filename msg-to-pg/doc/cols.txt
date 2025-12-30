@@ -1,0 +1,79 @@
+2. Quick docs: SMS vs MMS columns
+SMS (from sms_raw → sms_parsed-style view)
+
+Typical columns we’ve been using / talking about:
+
+id – internal row id (not from XML).
+
+file_name – backup file basename.
+
+idx_in_file – 0-based or 1-based index in that XML.
+
+source_id – original _id or similar from the phone DB.
+
+date_ms – parsed->>'date' (ms since epoch).
+
+date_sent_ms – parsed->>'date_sent' (ms since epoch, or 0/empty).
+
+readable_date – literal parsed->>'readable_date' from the XML.
+
+msg_box – cast of parsed->>'type':
+
+1 = inbox (incoming)
+
+2 = sent (outgoing)
+
+others are drafts/outbox/etc.
+
+address – parsed->>'address' (other party’s number, or service).
+
+body – parsed->>'body' (SMS text).
+
+Flags/emetics:
+
+read, seen, locked, protocol, status, sub_id, etc.
+
+All of those XML-ish ones are directly from the <sms ...> attributes.
+
+MMS (from mms_raw)
+
+MMS is structurally similar at the top, but text is buried:
+
+Top-level parsed keys (simplified):
+
+date, date_sent – like SMS, ms since epoch.
+
+msg_box or m_type / box – indicates inbox vs sent.
+
+read, seen, sub_id, etc.
+
+thread_id or similar conversation id.
+
+parts – child JSON structure:
+parsed->'parts'->'part' is an array of objects like:
+
+ct – content type, e.g. text/plain or image/jpeg.
+
+text – text content for ct='text/plain'.
+
+name, cid, cl – media identifiers, filenames, etc.
+
+addrs – addresses (from/to), often in:
+
+parsed->'addrs'->'addr' array with:
+
+address
+
+type (from, to, etc.)
+
+So:
+
+Yes, everything we’ll touch in parsed is from the original XML.
+
+The only “made up” bits are:
+
+date_ms/date_sent_ms = numeric versions.
+
+peer = your chosen “other side” per message.
+
+in = boolean derived from the box/type.

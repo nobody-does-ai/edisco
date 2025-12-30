@@ -1,0 +1,87 @@
+#!/usr/bin/env perl
+use common::sense;
+use DBI;
+use Path::Tiny qw(path);
+use XML::LibXML::Simple qw(XMLin);
+use JSON::MaybeXS;
+
+# usage: sms_mms_to_raw.pl backup.xml
+my $file = shift or die "Usage: $0 backup.xml\n";
+my $abs  = path($file)->realpath->stringify;
+
+my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
+
+# Adjust DSN/user/pass to taste; this assumes local socket auth.
+my $dsn  = $ENV{PG_DSN}  // 'dbi:Pg:dbname=sms';
+my $user = $ENV{PG_USER} // '';
+my $pass = $ENV{PG_PASS} // '';
+
+my $dbh = DBI->connect($dsn, $user, $pass, {
+    RaiseError => 1,
+    AutoCommit => 1,
+});
+
+# Parse XML into Perl hashes/arrays
+my $data = XMLin(
+    $abs,
+    KeepRoot   => 1,
+    KeyAttr    => [],
+    ForceArray => [qw( sms mms part addr parts addrs )],
+);
+
+my $root = $data->{smses}
+  or die "Expected <smses> root\n";
+
+# Prepare statements
+my $ins_sms = $dbh->prepare(<<'SQL');
+insert into sms_raw (file_name, idx_in_file, parsed, source_id)
+values (?, ?, ?::jsonb, ?)
+on conflict (source_id) do nothing
+SQL
+
+my $ins_mms = $dbh->prepare(<<'SQL');
+insert into mms_raw (file_name, idx_in_file, parsed, source_id)
+values (?, ?, ?::jsonb, ?)
+on conflict (source_id) do nothing
+SQL
+
+# Helper to build a semi-stable source_id
+sub sms_source_id {
+    my ($msg, $idx) = @_;
+    my $date    = $msg->{date}    // '';
+    my $addr    = $msg->{address} // '';
+    my $sub_id  = $msg->{sub_id}  // '';
+    return join ':', 'sms', $date, $addr, $sub_id, $idx;
+}
+
+sub mms_source_id {
+    my ($msg, $idx) = @_;
+    my $date   = $msg->{date}   // '';
+    my $tr_id  = $msg->{tr_id}  // '';
+    my $m_type = $msg->{m_type} // '';
+    return join ':', 'mms', $date, $tr_id, $m_type, $idx;
+}
+
+# Import SMS
+if (my $sms_list = $root->{sms}) {
+    for my $idx (0 .. $#$sms_list) {
+        my $msg = $sms_list->[$idx] or next;
+        my $src = sms_source_id($msg, $idx);
+        my $j   = $json->encode($msg);
+
+        $ins_sms->execute($abs, $idx, $j, $src);
+    }
+}
+
+# Import MMS
+if (my $mms_list = $root->{mms}) {
+    for my $idx (0 .. $#$mms_list) {
+        my $msg = $mms_list->[$idx] or next;
+        my $src = mms_source_id($msg, $idx);
+        my $j   = $json->encode($msg);
+
+        $ins_mms->execute($abs, $idx, $j, $src);
+    }
+}
+
+say "Imported from $abs";

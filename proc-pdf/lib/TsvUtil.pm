@@ -39,55 +39,56 @@ sub pdf_page_count {
   my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
   return $pages_line ? int($pages_line) : undef;
 }
-sub pdf_to_png {
+sub pdf_to_png($) {
+  die "usage: pdf_to_png(\$png)" unless @_==1;
   my(@res);
-  my($fmt)="img/%s.png";
-  my($base);
-  for my $if(@_){
-    say STDERR "doing $if";
-    $base=$if->basename(".pdf");
-    my ($of)=path(sprintf($fmt,$base));
-    push(@res,$of);
-    next if -e $of;
-    if(my $pid=fork){
-      while($pid!=waitpid($pid,0)){
-        say "??? $?";
-      };
-      die "pdftoppm:$?" if $?;
-    } else {
-      $of->parent->mkdir;
-      open(STDOUT,">",$of->stringify);
-      exec(qw(pdftoppm -png -singlefile), $if);
-      die "exec:pdftoppm:$!";
+  my($fmt)="%s/%s.png";
+  my($base,$dir);
+  my($if)=$_[0];
+  say STDERR "doing $if";
+  $base=$if->basename;
+  $dir=$if->parent->basename;
+  my ($of)=path(sprintf($fmt,$dir,$base));
+  push(@res,$of);
+  next if -e $of;
+  if(my $pid=fork){
+    while($pid!=waitpid($pid,0)){
+      say "??? $?";
     };
+    die "pdftoppm:$?" if $?;
+  } else {
+    $of->parent->mkdir;
+    open(STDOUT,">",$of->stringify);
+    exec(qw(pdftoppm -png -singlefile), $if);
+    die "exec:pdftoppm:$!";
   };
-  @res;
+  say readlink($_) for glob "/proc/$$/fd/*";
+  return $of;
 };
 sub png_to_tsv {
+  die "usage: png_to_tsv(\$png)" unless @_==1;
   my(@res);
-  my($fmt)="tsv/%s.tsv";
-  my($base);
-  for my $if(@_){
-    $if=path($if);
-    say "doing $if";
-    $base=$if->basename(".png");
-    my ($of)=path(sprintf($fmt,$if->basename(".png")));
-    $of->parent->mkdir;
-    say "output: $of";
-    push(@res,$of);
-    unless ( -e "tsv/$base.tsv" ){
-      my @tcmd = (
-        'tesseract',
-        '-l', 'eng',
-        $if,
-        "tsv/$base",
-        'tsv',
-      );
-      system(@tcmd);
-      die "(@tcmd)" if $?;
-    };
+  my($fmt)="%s/%s";
+  my($base,$dir);
+  my $if=$_[0];
+  $if=path($if);
+  $base=$if->basename(".png");
+  $dir=$if->parent->basename;
+  my ($of)=path(sprintf($fmt,$dir,$base));
+  say "doing png_to_tsv $if => $of";
+  $of->parent->mkdir;
+  unless ( -e "$of" ) {
+    my @tcmd = (
+      'tesseract',
+      '-l', 'eng',
+      $if,
+      $of,
+      'tsv',
+    );
+    system(@tcmd);
+    die "(@tcmd)" if $?;
   };
-  return @res;
+  return $of;
 };
 sub next_set {
   my(@word)=@_;
@@ -120,6 +121,7 @@ sub pdf_to_pgs {
       my($of)=sprintf($fmt,$if->basename(".pdf"),$pg);
       push(@res,$of);
       unless(-e $of) {
+        say STDERR "xform $if to $of\n";
         path("pgs")->mkdir;
         my (@cmd)=( qw(qpdf), $if, qw( --pages .), 1+$pg, '--', $of);
         system(@cmd);

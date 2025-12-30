@@ -1,0 +1,151 @@
+#!/usr/bin/perl
+use common::sense;
+use autodie;
+use lib 'lib';
+use Nobody::Util qw(path max min); 
+use TsvFile; 
+
+# Configuration
+my $target_acct = "1603387"; 
+my $tsv_dir     = "src";
+my $out_dir     = "out"; 
+
+path($out_dir)->mkdir;
+path("$out_dir/html")->mkdir;
+
+# 1. Process each TSV as a complete statement
+my @all_tsvs = sort glob("$tsv_dir/*.tsv");
+
+for my $file_path (@all_tsvs) {
+    my $stmt_id = path($file_path)->basename(".tsv");
+    say "Processing: $stmt_id...";
+    
+    my $tsv = TsvFile->new($file_path);
+    
+    # Filter for level 5 (Words)
+    my @stmt_words = grep { $_->level == 5 } @{$tsv->atsv};
+    next unless @stmt_words;
+
+    # Determine document boundaries for layout logic
+    my $max_right = max(map { $_->right } @stmt_words) // 2500;
+    my $mid_point = $max_right * 0.45;
+
+    my ($inv,$txn);
+    for(my $i=0;$i<@stmt_words;$i++) {
+      local($_)=$stmt_words[$i];
+      if(m{^INVESTMENTS$}){
+    };
+    exit(0);
+    # 2. Group words into lines
+    my @lines = group_into_lines(@stmt_words);
+    
+    # 3. Extract tables
+    my $invest_data = extract_section_data(\@lines, 'INVESTMENTS', $target_acct, $mid_point);
+    my $trans_data  = extract_section_data(\@lines, 'TRANSACTIONS', $target_acct, $mid_point);
+    
+    # 4. Generate Output
+    if (@$invest_data || @$trans_data) {
+        write_html("$out_dir/html/$stmt_id.html", $stmt_id, $target_acct, $invest_data, $trans_data);
+        say "  Generated HTML for $stmt_id";
+    }
+}
+
+sub group_into_lines {
+    my @sorted = sort { $a->top <=> $b->top } @_; 
+    my @groups;
+    say "words: ", 0+@sorted;
+    while (@sorted) {
+        my @current_line;
+        my $bottom = $sorted[0]->bottom; 
+        # Tolerance of 5 pixels for 600dpi scans to handle baseline jitter
+        while (@sorted && $sorted[0]->top <= ($bottom - 5)) {
+            $bottom = max($bottom, $sorted[0]->bottom); 
+            push @current_line, shift @sorted;
+        }
+        push @groups, [ sort { $a->left <=> $b->left } @current_line ];
+    }
+    say "found ", scalar(@groups), " groups";
+    say "max: ", max(map { 0+@$_ } @groups), "words";
+    ddx( \@groups );
+    return @groups;
+}
+
+sub extract_section_data {
+    my ($lines_ref, $header_trigger, $acct, $mid_point) = @_;
+    my @rows;
+    my $active = 0; 
+    my $num_pattern = qr/^[$\d,.\-%]+$/;
+
+    for my $line (@$lines_ref) {
+        my @words = @$line;
+        my @txt = map { $_->text } @words;
+        my $full_line = join(" ", @txt);
+        
+        if ($full_line =~ /$header_trigger/i) { $active = 1; next; }
+        if ($active && $full_line =~ /Total|ACCT\s+#/i && $full_line !~ /$acct/) { $active = 0; }
+        
+        next unless $active;
+        if ($full_line =~ /$acct/) { $active = 2; next; }
+        next unless $active == 2;
+
+        if ($header_trigger eq 'INVESTMENTS') {
+            my (@label_words, @num_words);
+            for my $w (@words) {
+                if ($w->left > $mid_point && $w->text =~ $num_pattern) {
+                    push @num_words, $w->text;
+                } else {
+                    push @label_words, $w->text;
+                }
+            }
+            if (@num_words >= 4) { 
+                push @rows, [ $header_trigger, join(" ", @label_words), @num_words ]; 
+            }
+        }
+        elsif ($header_trigger eq 'TRANSACTIONS') {
+            my $date_regex = qr|[\d*/]{2}/[\d*/]{2}/[\d*/]{4}|;
+            if ($txt[0] =~ /^$date_regex$/) {
+                my $date = shift @txt;
+                my $amt = pop @txt; 
+                push @rows, [ $header_trigger, $date, join(" ", @txt), $amt ];
+            }
+            elsif (@rows && @txt > 0 && @txt < 12) { 
+                $rows[-1][-2] .= " " . join(" ", @txt);
+            }
+        }
+    }
+    return \@rows;
+}
+
+sub write_html {
+    my ($file, $id, $acct, $invest, $trans) = @_;
+    my $fh = path($file)->openw;
+    print $fh "<html><head><title>Statement $id</title><style>";
+    print $fh "body{font-family:sans-serif;padding:20px}table{border-collapse:collapse;margin-bottom:30px;width:100%}td{border:1px solid #ccc;padding:6px;font-family:monospace}tr:nth-child(even){background:#f9f9f9}";
+    print $fh "</style></head><body><h1>Statement: $id</h1>";
+    
+    if (@$invest) {
+        print $fh "<h2>Investments ($acct)</h2><table>";
+        for my $r (@$invest) { 
+            my @cells = @$r; shift @cells; # Remove section trigger
+            print $fh "<tr><td>".join("</td><td>", @cells)."</td></tr>"; 
+        }
+        print $fh "</table>";
+    }
+    if (@$trans) {
+        print $fh "<h2>Transactions ($acct)</h2><table>";
+        for my $r (@$trans) { 
+            my @cells = @$r; shift @cells; # Remove section trigger
+            print $fh "<tr><td>".join("</td><td>", @cells)."</td></tr>"; 
+        }
+        print $fh "</table>";
+    }
+    print $fh "</body></html>";
+}
+
+sub write_tsv {
+    my ($file, $invest, $trans) = @_;
+    my $fh = path($file)->openw;
+    for my $r (@$invest, @$trans) {
+        print $fh join("\t", @$r) . "\n";
+    }
+}

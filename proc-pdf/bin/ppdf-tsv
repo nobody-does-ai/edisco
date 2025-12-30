@@ -126,55 +126,22 @@ sub render {
 
   return $im;
 }
-
-sub rend_file($) {
-  my($file,$pngn,$pngo)=@_;
-  my (%page);
-  for($file){
-    my($path)=TsvPath->new($_);
-    die "mismatch" unless @_;
-    $path->dir("out");
-    $path->ext("png");
-    $page{pngn}=$path->path;
-    $path->dir("img");
-    $page{pngo}=$path->path;
-  };
-  $page{file} = safe_isa($file,"TsvFile")?$file:TsvFile->new($file);
-  my ($image) = render(
-    \%page, 
-    sub { return "XXXXXXX" }
-  );
-  ddx( ref($page{file}) );
-  die "failed to render" unless defined $image;
-  path($page{pngn})->touchpath->spew($image->png);
-  return \%page;
-};
+our(@file,$file);
 sub main {
-  my(@file) = map{path($_)} glob("src/*.pdf");
-  @file=map { path($_) } pdf_to_pgs(@file);
-  @file=pdf_to_png(@file);
-  @file=png_to_tsv(@file);
-  for my $file (@file) {
-    my($page)=rend_file($file);
-    my($pngo,$pngn,$word)=@{$page}{ qw( pngo pngn word ) };
-    my(@word)=@$word;
-    # 1. Create a NEW Main Window
-    my $mw = MainWindow->new;
-    build($mw,$pngn,@word);
-    $mw->title("Viewing: $file");
-
-    # 2. Bind Return to DESTROY (not exit)
-    # This kills the window, causing MainLoop to finish this iteration
-    $mw->bind('<Return>', sub { $mw->destroy; });
-    $mw->bind('<Control-w>', sub { $mw->destroy; });
-
-    # 3. Bind Escape/Ctrl-Q to EXIT the whole script
-    $mw->bind('<Control-q>', sub { exit });
-
-    MainLoop;
-
-    print "Finished with $file, moving to next...\n";
+  my (@tsv);
+  local(@file);
+  @file=map { path($_) } glob("src/*.pdf");
+  local($file);
+  for $file (@file) {
+    local(@file)=map { path($_) } pdf_to_pgs($file);
+    local($file);
+    for $file(@file) {
+      $file=pdf_to_png($file);
+      $file=png_to_tsv($file);
+      push(@tsv,$file);
+    }
   }
+  ddx( \@tsv );
 }
 
 

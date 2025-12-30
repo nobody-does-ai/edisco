@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+use common::sense;
+use autodie;
+use lib 'lib';
+use TsvFile;
+use Image::Magick;
+use Nobody::Util qw(max);
+
+# Usage: ./tsv-render input.tsv output.png
+my ($in_file, $out_file) = @ARGV;
+die "Usage: $0 input.tsv output.png\n" unless $in_file;
+unless(defined($out_file)) {
+  for($out_file="$in_file")  {
+    $_=path($_)->basename(".tsv");
+    $_="$_.png";
+  };
+};
+eex( { in_file=>$in_file, out_file=>$out_file } );
+my $tsv = TsvFile->new($in_file);
+my $rows = $tsv->atsv;
+
+# Optimized: Try to get dimensions from Page object (Level 1)
+my $page = (grep { $_->level == 1 } @$rows)[0];
+
+my @words = grep { $_->level == 5 } @$rows;
+die "No words found in TSV.\n" unless @words;
+
+my ($width, $height);
+if ($page) {
+    $width  = $page->width;
+    $height = $page->height;
+}
+else {
+    # Fallback to max algorithm
+    $width  = max(map { $_->right } @words) + 50;
+    $height = max(map { $_->bottom } @words) + 50;
+}
+
+my $image = Image::Magick->new(size => "${width}x${height}");
+$image->Read('xc:white');
+
+# Calculate a consistent pointsize based on average word height to avoid "ransom note" look
+my $avg_height = 0;
+$avg_height += $_->height for @words;
+$avg_height /= scalar @words;
+my $fixed_pointsize = $avg_height * 0.8;
+
+for my $w (@words) {
+    $image->Annotate(
+        text      => $w->text,
+        pointsize => $fixed_pointsize,
+        fill      => 'black',
+        x         => $w->left,
+        y         => $w->top + $fixed_pointsize, 
+        font      => 'Liberation-Mono-Bold' 
+    );
+}
+
+$image->Write($out_file);
+say "Rendered $in_file to $out_file (${width}x${height}) using fixed pointsize: $fixed_pointsize";

@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+use XML::LibXML::Simple qw(XMLin);
+
+my($file)=glob("sms-*.xml");
+my $data = XMLin(
+    $file,
+    KeepRoot     => 1,   # keep <smses> as the top-level key
+    ForceArray   => [qw(sms mms part addr)],  # always arrayify these
+    KeyAttr      => [],  # don’t force weird hash keys
+);
+$data=$data->{smses};
+$Data::Dumper::Terse=1;
+use Data::Dumper;
+for(qw(sms mms)) {
+  local(*_)=$data->{$_};
+  say Dumper($_[$_]) for 0 .. 10;
+};
+#    sub type {
+#      for($_[0]){
+#        if(m{^\s*<sms\s}){
+#          return "sms";
+#        } elsif(m{^\s*<mms\s}){
+#          return "mms";
+#        } else {
+#          return "not";
+#        };
+#      };
+#    };
+#    sub main {
+#      $_=0 for my($all,$sms,$mms);
+#      my($file)=glob("sms-blu-*.xml");
+#      @ARGV=$file;
+#      chomp(@_=<ARGV>);
+#      ddx(scalar(@_));
+#      for(my $i=0;$i<@_;$i++) {
+#        for($_[$i]){
+#          my($type)=type($_);
+#          if($type eq "sms" && $sms++<10) {
+#            say;
+#          } elsif($type eq "mms" && $mms++<10) {
+#            say;
+#          } else {
+#            say;
+#          };
+#        };
+#      };
+#    };
+#    main;

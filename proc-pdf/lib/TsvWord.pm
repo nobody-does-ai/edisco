@@ -5,6 +5,7 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
 package TsvWord;
+use lib "lib";
 use common::sense;
 use TsvRect;
 use autodie;
@@ -35,6 +36,12 @@ sub left {
 sub right {
   shift->rect->right(@_);
 }
+sub height {
+  shift->rect->height(@_);
+};
+sub width {
+  shift->rect->width(@_);
+};
 sub top {
   shift->rect->top(@_);
 }

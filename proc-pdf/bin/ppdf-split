@@ -42,7 +42,6 @@ sub main (@) {
     ddx({ file=>$if, pc=>$pc});
     my ($pg);
     for ($pg=1;$pg<$pc;$pg++ ) {
-use Path::Tiny;
       my ($ib)=$if->basename('.pdf');;
       my ($of)=path(sprintf($fmt,$ib,$pp++));
       ddx({if=>$if,ib=>$ib,pg=>$pg,of=>$of,op=>$op});

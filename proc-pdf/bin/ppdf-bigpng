@@ -1,0 +1,73 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Getopt::WonderBra;
+BEGIN { use lib "lib"; };
+use TsvUtil;
+our(@VERSION) = qw( 0 1 0 );
+
+# ppdf-big-png Split PDF into individual pages,
+#   convert each page to png, append each page
+#   to a single file.
+
+sub get_page_count;
+sub help {
+  say("Use The Source, Luke!");
+}
+sub main (@) {
+  local(@_)=@_;
+  @_=sort glob("src/*.pdf") unless @_;
+
+  for(@_){
+    my($if)=$_;
+    my($pages)=get_page_count($if);
+    die "Error: Could not determine page count for $_\n" unless defined($pages);
+    if($pages==1) {
+
+    } else {
+      my($fmt)="img/%s-%03d.pdf";
+      my ($op)=0;
+      my $pp=0;
+      my ($if)=path($_);
+      my ($pc)=$pages;
+      ddx({ file=>$if, pc=>$pc});
+      my ($pg);
+      for ($pg=1;$pg<$pc;$pg++ ) {
+        my ($ib)=$if->basename('.pdf');;
+        my ($of)=path(sprintf($fmt,$ib,$pp++));
+        ddx({if=>$if,ib=>$ib,pg=>$pg,of=>$of,op=>$op});
+        $of->parent->mkdir;
+        my (@cmd)=(
+          qw(qpdf),
+          $if,
+          qw( --pages .),
+          $pg,
+          '--',
+          $of);
+        system(@cmd);
+      };
+      say STDERR "extracted $pg pages from $if";
+    }
+}
+
+
+sub get_page_count {
+  my ($pdf) = @_;
+
+  my @cmd = ('pdfinfo', $pdf);
+  my $info = qx/@cmd 2>&1/;
+  if ($? != 0) {
+    warn "pdfinfo failed on '$pdf': $info";
+    return undef;
+  }
+
+  my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
+  return $pages_line ? int($pages_line) : undef;
+}
+
+main(@ARGV);
