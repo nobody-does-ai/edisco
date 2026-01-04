@@ -13,13 +13,13 @@ my $config = {
     imap_server  => 'imap.gmail.com',
     imap_port    => 993,
     download_dir => './mail',
-    index_file   => './mail/message_ids.idx', # Removed dot
-    target_label => '[Gmail]/All Mail',      # Targets everything including archived
+    index_file   => './mail/message_ids.idx',
+    target_label => '[Gmail]/All Mail',
 };
 
 # Setup Maildir structure
 my $dir = path($config->{download_dir})->child('dir');
-$dir->child($_)->mkdir for qw(cur new tmp); # path->mkdir is recursive/p-style
+$dir->child($_)->mkdir for qw(cur new tmp);
 
 # Load credentials via pass
 my ($user) = map { split m{\n} } qx(pass gmail.user);
@@ -49,8 +49,7 @@ my $imap = Mail::IMAPClient->new(
     Raw      => 1,
 ) or die "IMAP connection failed: $@";
 
-# Define search criteria: ANY (OR) of these domains/addresses in ANY (OR) header field
-# IMAP SEARCH OR syntax is nested: OR (condition1) (OR (condition2) (condition3))
+# Define search criteria
 my @targets = qw(
     lisa.clayton.paul@gmail.com
     john.bartlet.paul@gmail.com
@@ -59,14 +58,11 @@ my @targets = qw(
     washtenaw
 );
 
-# Build the search string for FROM, TO, CC, and BCC
 sub build_search {
     my @parts;
     foreach my $t (@targets) {
         push @parts, "FROM $t", "TO $t", "CC $t", "BCC $t";
     }
-    
-    # Nest ORs because IMAP OR only takes two arguments
     my $query = pop @parts;
     while (@parts) {
         my $next = pop @parts;
@@ -84,16 +80,19 @@ eval {
     log_msg("Executing server-side search...");
     my @uids = $imap->search($query) or warn "Search returned no results or failed: $@";
 
-    log_msg("Found " . scalar(@uids) . " messages matching criteria. Checking index...");
+    log_msg("Found " . scalar(@uids) . " messages matching criteria.");
 
-    # Fetch envelopes for the matching UIDs to check Message-IDs
-    my $envelopes = $imap->fetch_hash(\@uids, "ENVELOPE") if @uids;
-    
     my $added = 0;
     my @newly_indexed;
 
-    foreach my $uid (sort { $a <=> $b } keys %$envelopes) {
-        my $mid = $envelopes->{$uid}->{ENVELOPE}->message_id;
+    foreach my $uid (sort { $a <=> $b } @uids) {
+        # Robust Message-ID retrieval
+        my $mid = $imap->get_header($uid, "Message-ID");
+        if ($mid) {
+            $mid =~ s/^\s*<//;
+            $mid =~ s/>\s*$//;
+        }
+        
         next unless $mid;
         next if $global_seen{$mid};
 
