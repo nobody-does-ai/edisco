@@ -1,0 +1,96 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use common::sense;
+use Email::MIME;
+use Path::Tiny;
+use Digest::MD5 qw(md5_hex);
+use File::Copy;
+
+# Configuration
+my $mail_root = path("./mail/dir");
+my $att_root  = $mail_root->child("att");
+
+# Ensure attachment subdirs exist (00-99)
+for my $i (0..99) {
+    $att_root->child(sprintf("%02d", $i))->mkpath;
+}
+
+sub get_attachment_path {
+    my ($filename) = @_;
+    $filename =~ s/[^a-zA-Z0-9._-]/_/g; # Sanitize
+    
+    for my $i (0..99) {
+        my $sub = sprintf("%02d", $i);
+        my $target = $att_root->child($sub, $filename);
+        return $target unless $target->exists;
+    }
+    # Fallback to timestamped if all 100 slots for that name are full
+    return $att_root->child("00", time . "_" . $filename);
+}
+
+sub process_message {
+    my ($file) = @_;
+    my $raw = $file->slurp_raw;
+    my $parsed = Email::MIME->new($raw);
+    
+    my @new_body;
+    my @attachments_found;
+
+    $parsed->walk_parts(sub {
+        my ($part) = @_;
+        return if $part->parts > 1; # Skip container parts
+
+        my $type = $part->contentType || 'text/plain';
+        my $disp = $part->header('Content-Disposition') || '';
+        my $name = $part->filename || 'unnamed_attachment';
+
+        # Case 1: Plain Text Body
+        if ($type =~ m{text/plain}i && $disp !~ /attachment/i) {
+            push @new_body, $part->body_str;
+        }
+        # Case 2: HTML Body (Convert to text via links)
+        elsif ($type =~ m{text/html}i && $disp !~ /attachment/i) {
+            my $temp_html = Path::Tiny->tempfile;
+            $temp_html->spew_raw($part->body);
+            my $plain = qx(links -dump $temp_html);
+            push @new_body, "--- HTML CONVERTED TO PLAIN TEXT ---\n" . $plain;
+        }
+        # Case 3: Attachments
+        else {
+            my $att_path = get_attachment_path($name);
+            $att_path->spew_raw($part->body);
+            push @attachments_found, $att_path->relative($mail_root);
+        }
+    });
+
+    # Reconstruct Content
+    my $final_text = join("\n\n", @new_body);
+    if (@attachments_found) {
+        $final_text .= "\n\n--- ATTACHMENTS ---\n";
+        $final_text .= join("\n", @attachments_found) . "\n";
+    }
+
+    # Atomic update: Replace original file with simplified version
+    my $header_obj = $parsed->header_obj;
+    my $new_msg = Email::MIME->create(
+        header_str => [
+            map { $_ => $header_obj->header($_) } $header_obj->header_names
+        ],
+        parts => [ $final_text ],
+    );
+
+    $file->spew_raw($new_msg->as_string);
+}
+
+# Process all files in cur/
+log_msg("Post-processing cur/ directory...");
+for my $file ($mail_root->child("cur")->children) {
+    next if $file->is_dir;
+    eval { process_message($file) };
+    warn "Error processing $file: $@\n" if $@;
+}
+
+sub log_msg {
+    print "[", scalar localtime, "] ", shift, "\n";
+}

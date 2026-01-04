@@ -18,7 +18,8 @@ my $config = {
 };
 
 # Setup Maildir structure
-my $dir = path($config->{download_dir})->child('dir');
+my $base_path = path($config->{download_dir});
+my $dir = $base_path->child('dir');
 $dir->child($_)->mkdir for qw(cur new tmp);
 
 # Load credentials via pass
@@ -27,9 +28,10 @@ my ($pass) = map { split m{\n} } qx(pass gmail.pass);
 die "Credentials missing in pass" unless $user && $pass;
 
 # Load global Message-ID index
+# Value 0 = pre-existing, Value 1 = found/new in this session
 my %global_seen;
 if (-e $config->{index_file}) {
-    %global_seen = map { $_ => 1 } path($config->{index_file})->lines({chomp => 1});
+    %global_seen = map { $_ => 0 } path($config->{index_file})->lines({chomp => 1});
 }
 
 sub log_msg {
@@ -47,54 +49,53 @@ my $imap = Mail::IMAPClient->new(
     User     => $user,
     Password => $pass,
     Raw      => 1,
+    Uid      => 1, 
 ) or die "IMAP connection failed: $@";
 
-# Define search criteria
+# SIMPLE TARGET LIST
 my @targets = qw(
-    lisa.clayton.paul@gmail.com
-    john.bartlet.paul@gmail.com
-    cmplaw.com
-    pollockinvestmentadvisors.com
-    washtenaw
+    lisaclaytonpaul@gmail.com
+    johnbartletpaul@gmail.com
+    @cmplaw.com
+    @pollockinvestmentadvisors.com
+    @washtenaw.org
 );
-
-sub build_search {
-    my @parts;
-    foreach my $t (@targets) {
-        push @parts, "FROM $t", "TO $t", "CC $t", "BCC $t";
-    }
-    my $query = pop @parts;
-    while (@parts) {
-        my $next = pop @parts;
-        $query = "OR ($next) ($query)";
-    }
-    return $query;
-}
 
 eval {
     my $folder = $config->{target_label};
     log_msg("Selecting folder: $folder");
     $imap->select($folder) or die "Could not select $folder: $@";
 
-    my $query = build_search();
-    log_msg("Executing server-side search...");
-    my @uids = $imap->search($query) or warn "Search returned no results or failed: $@";
+    my %uids_to_check;
+    log_msg("Starting individual term searches...");
 
-    log_msg("Found " . scalar(@uids) . " messages matching criteria.");
+    foreach my $term (@targets) {
+        my $query = qq(TEXT "$term");
+        my @results = $imap->search($query);
+        log_msg(sprintf("Term [%s]: %d results", $term, scalar @results));
+        $uids_to_check{$_} = 1 for @results;
+    }
+
+    my @all_uids = sort { $a <=> $b } keys %uids_to_check;
+    log_msg(sprintf("Total unique UIDs to process: %d", scalar @all_uids));
 
     my $added = 0;
     my @newly_indexed;
 
-    foreach my $uid (sort { $a <=> $b } @uids) {
-        # Robust Message-ID retrieval
-        my $mid = $imap->get_header($uid, "Message-ID");
+    foreach my $uid (@all_uids) {
+        my @mids = $imap->get_header($uid, "Message-ID");
+        my $mid = $mids[0];
+        
         if ($mid) {
             $mid =~ s/^\s*<//;
             $mid =~ s/>\s*$//;
+            $mid =~ s/\s+$//;
         }
         
         next unless $mid;
-        next if $global_seen{$mid};
+        
+        # If defined but 0, it was pre-existing. Skip.
+        next if defined $global_seen{$mid};
 
         my $raw = $imap->message_string($uid);
         unless ($raw) {
@@ -110,10 +111,11 @@ eval {
             $added++;
         }
 
+        # Mark as 1 (new in this session)
         $global_seen{$mid} = 1;
         push @newly_indexed, $mid;
         
-        log_msg("Retrieved $added unique messages...") if $added > 0 && $added % 50 == 0;
+        log_msg("Downloaded $added unique messages...") if $added > 0 && $added % 50 == 0;
     }
 
     if (@newly_indexed) {
