@@ -5,6 +5,7 @@ use common::sense;
 use Email::MIME;
 use Path::Tiny;
 use Digest::MD5 qw(md5_hex);
+use Encode qw(encode);
 
 # Configuration
 my $mail_root = path("./mail/dir");
@@ -35,48 +36,54 @@ sub process_message {
 
     $parsed->walk_parts(sub {
         my ($part) = @_;
-        # parts() returns a list in list context; count parts to skip containers
         return if scalar($part->parts) > 1;
 
         my $type = $part->content_type // 'text/plain';
         my $disp = $part->header('Content-Disposition') // '';
         my $name = $part->filename // 'unnamed';
 
-        # Standard Body Promotion: logic for finding the primary text content
         if ($type =~ m{text/plain}i && ($disp !~ /attachment/i || !@body_parts)) {
             push @body_parts, $part->body_str;
         }
-        # HTML Conversion via links -dump
         elsif ($type =~ m{text/html}i && $disp !~ /attachment/i) {
             my $tmp = Path::Tiny->tempfile(SUFFIX => '.html');
             $tmp->spew_raw($part->body);
             my $dump = qx(links -dump $tmp);
             push @body_parts, "--- HTML DUMP ---\n$dump";
         }
-        # Everything else is handled as an externalized attachment
         else {
             my $dest = get_attachment_path($name);
             $dest->spew_raw($part->body);
             push @attachments, $dest->relative($mail_root);
+            
+            # If it's a PDF, extract the text and append it to the body for greppability
+            if ($name =~ /\.pdf$/i) {
+                my $pdf_text = qx(pdftotext "$dest" -);
+                if ($pdf_text) {
+                    push @body_parts, "--- PDF TEXT EXTRACT ($name) ---\n" . $pdf_text;
+                }
+            }
         }
     });
 
-    # Rebuild the message as a simplified flat file
     my $content = join("\n\n", @body_parts);
     if (@attachments) {
         $content .= "\n\n--- ATTACHMENTS ---\n" . join("\n", @attachments) . "\n";
     }
 
+    my $encoded_content = encode('UTF-8', $content);
     my $header_obj = $parsed->header_obj;
     my $new_msg = Email::MIME->create(
         header_str => [ map { $_ => $header_obj->header($_) } $header_obj->header_names ],
-        parts      => [ $content ],
+        parts      => [ $encoded_content ],
     );
 
     $file->spew_raw($new_msg->as_string);
 }
 
-log_msg("Flattening Maildir for grep...");
+log_msg("Flattening Maildir and extracting PDF text...");
+no warnings 'regexp'; 
+
 for my $f ($mail_root->child("cur")->children) {
     next if $f->is_dir;
     eval { process_message($f) };
