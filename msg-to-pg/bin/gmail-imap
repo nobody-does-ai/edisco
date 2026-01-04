@@ -1,0 +1,128 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use common::sense;
+use Mail::IMAPClient;
+use IO::Socket::SSL;
+use Path::Tiny;
+use POSIX qw(strftime);
+use Digest::MD5 qw(md5_hex);
+
+# Hard-coded Configuration
+my $config = {
+    imap_server  => 'imap.gmail.com',
+    imap_port    => 993,
+    download_dir => './mail',
+    index_file   => './mail/message_ids.idx', # Removed dot
+    target_label => '[Gmail]/All Mail',      # Targets everything including archived
+};
+
+# Setup Maildir structure
+my $dir = path($config->{download_dir})->child('dir');
+$dir->child($_)->mkdir for qw(cur new tmp); # path->mkdir is recursive/p-style
+
+# Load credentials via pass
+my ($user) = map { split m{\n} } qx(pass gmail.user);
+my ($pass) = map { split m{\n} } qx(pass gmail.pass);
+die "Credentials missing in pass" unless $user && $pass;
+
+# Load global Message-ID index
+my %global_seen;
+if (-e $config->{index_file}) {
+    %global_seen = map { $_ => 1 } path($config->{index_file})->lines({chomp => 1});
+}
+
+sub log_msg {
+    printf("[%s] %s\n", strftime("%Y-%m-%d %H:%M:%S", localtime), shift);
+}
+
+# Connect to IMAP
+my $socket = IO::Socket::SSL->new(
+    PeerAddr => $config->{imap_server},
+    PeerPort => $config->{imap_port},
+) or die "SSL socket failed: $@";
+
+my $imap = Mail::IMAPClient->new(
+    Socket   => $socket,
+    User     => $user,
+    Password => $pass,
+    Raw      => 1,
+) or die "IMAP connection failed: $@";
+
+# Define search criteria: ANY (OR) of these domains/addresses in ANY (OR) header field
+# IMAP SEARCH OR syntax is nested: OR (condition1) (OR (condition2) (condition3))
+my @targets = qw(
+    lisa.clayton.paul@gmail.com
+    john.bartlet.paul@gmail.com
+    cmplaw.com
+    pollockinvestmentadvisors.com
+    washtenaw
+);
+
+# Build the search string for FROM, TO, CC, and BCC
+sub build_search {
+    my @parts;
+    foreach my $t (@targets) {
+        push @parts, "FROM $t", "TO $t", "CC $t", "BCC $t";
+    }
+    
+    # Nest ORs because IMAP OR only takes two arguments
+    my $query = pop @parts;
+    while (@parts) {
+        my $next = pop @parts;
+        $query = "OR ($next) ($query)";
+    }
+    return $query;
+}
+
+eval {
+    my $folder = $config->{target_label};
+    log_msg("Selecting folder: $folder");
+    $imap->select($folder) or die "Could not select $folder: $@";
+
+    my $query = build_search();
+    log_msg("Executing server-side search...");
+    my @uids = $imap->search($query) or warn "Search returned no results or failed: $@";
+
+    log_msg("Found " . scalar(@uids) . " messages matching criteria. Checking index...");
+
+    # Fetch envelopes for the matching UIDs to check Message-IDs
+    my $envelopes = $imap->fetch_hash(\@uids, "ENVELOPE") if @uids;
+    
+    my $added = 0;
+    my @newly_indexed;
+
+    foreach my $uid (sort { $a <=> $b } keys %$envelopes) {
+        my $mid = $envelopes->{$uid}->{ENVELOPE}->message_id;
+        next unless $mid;
+        next if $global_seen{$mid};
+
+        my $raw = $imap->message_string($uid);
+        unless ($raw) {
+            warn "Failed to fetch body for UID $uid ($mid): $@";
+            next;
+        }
+
+        my $md5 = md5_hex($raw);
+        my $target = $dir->child('cur', $md5);
+
+        unless ($target->exists) {
+            $target->spew_raw($raw);
+            $added++;
+        }
+
+        $global_seen{$mid} = 1;
+        push @newly_indexed, $mid;
+        
+        log_msg("Retrieved $added unique messages...") if $added > 0 && $added % 50 == 0;
+    }
+
+    if (@newly_indexed) {
+        path($config->{index_file})->append(join("\n", @newly_indexed) . "\n");
+    }
+
+    log_msg("Sync complete. $added new unique messages downloaded.");
+};
+
+$imap->logout;
+die "Fatal: $@\n" if $@;
