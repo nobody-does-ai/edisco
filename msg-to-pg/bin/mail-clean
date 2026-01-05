@@ -7,12 +7,17 @@ use Path::Tiny;
 use Digest::MD5 qw(md5_hex);
 use Encode qw(encode);
 
+$SIG{__WARN__} = sub {
+    $DB::single = 1;
+    warn @_;
+};
+
 # Configuration
-my $mail_root = path("./mail/dir");
-my $att_root  = $mail_root->child("att");
+my $dir = path("./mail");
+my %dir = map { $_ => $dir->child($_)->mkdir } qw(cur new tmp att bat);
 
 # Ensure attachment shards 00-99 exist
-$att_root->child(sprintf("%02d", $_))->mkpath for 0..99;
+$dir{att}->child(sprintf("%02d", $_))->mkdir for 0..99;
 
 sub get_attachment_path {
     my ($filename) = @_;
@@ -20,10 +25,10 @@ sub get_attachment_path {
     
     for my $i (0..99) {
         my $sub = sprintf("%02d", $i);
-        my $target = $att_root->child($sub, $filename);
+        my $target = $dir{att}->child($sub, $filename);
         return $target unless $target->exists;
     }
-    return $att_root->child("00", time . "_" . $filename);
+    return $dir{att}->child("00", time . "_" . $filename);
 }
 
 sub process_message {
@@ -31,8 +36,10 @@ sub process_message {
     my $raw = $file->slurp_raw;
     my $parsed = Email::MIME->new($raw);
     
-    my @body_parts;
+    my $plain_part;
+    my $html_part;
     my @attachments;
+    my $unexpected_parts = 0;
 
     $parsed->walk_parts(sub {
         my ($part) = @_;
@@ -42,37 +49,57 @@ sub process_message {
         my $disp = $part->header('Content-Disposition') // '';
         my $name = $part->filename // 'unnamed';
 
-        if ($type =~ m{text/plain}i && ($disp !~ /attachment/i || !@body_parts)) {
-            push @body_parts, $part->body_str;
+        # Standard Body Identification
+        if ($type =~ m{text/plain}i && $disp !~ /attachment/i) {
+            $plain_part //= $part->body_str;
         }
         elsif ($type =~ m{text/html}i && $disp !~ /attachment/i) {
-            my $tmp = Path::Tiny->tempfile(SUFFIX => '.html');
-            $tmp->spew_raw($part->body);
-            my $dump = qx(links -dump $tmp);
-            push @body_parts, "--- HTML DUMP ---\n$dump";
+            $html_part //= $part->body; 
         }
-        else {
+        # Explicit Attachments
+        elsif ($disp =~ /attachment/i) {
             my $dest = get_attachment_path($name);
             $dest->spew_raw($part->body);
-            push @attachments, $dest->relative($mail_root);
+            push @attachments, $dest->relative($dir);
             
-            # If it's a PDF, extract the text and append it to the body for greppability
+            # Extract PDF text for the searchable body
             if ($name =~ /\.pdf$/i) {
-                my $pdf_text = qx(pdftotext "$dest" -);
-                if ($pdf_text) {
-                    push @body_parts, "--- PDF TEXT EXTRACT ($name) ---\n" . $pdf_text;
-                }
+                my $pdf_text = qx(pdftotext "$dest" - 2>/dev/null);
+                $plain_part = ($plain_part // '') . "\n--- PDF TEXT EXTRACT ($name) ---\n" . $pdf_text if $pdf_text;
             }
+        }
+        else {
+            $unexpected_parts++;
         }
     });
 
-    my $content = join("\n\n", @body_parts);
-    if (@attachments) {
-        $content .= "\n\n--- ATTACHMENTS ---\n" . join("\n", @attachments) . "\n";
+    # Preference Logic: Prefer Plain over HTML
+    my $final_body = '';
+    if (defined $plain_part) {
+        $final_body = $plain_part;
+    }
+    elsif (defined $html_part) {
+        my $tmp = Path::Tiny->tempfile(SUFFIX => '.html');
+        $tmp->spew_raw($html_part);
+        $final_body = qx(links -dump $tmp);
     }
 
-    my $encoded_content = encode('UTF-8', $content);
+    # Triage: If no explicit inline bodies found, or weirdness detected, shunt it to bat/
+    if ($final_body eq '' || $unexpected_parts) {
+        my $dest = $dir{bat}->child($file->basename);
+        $file->move($dest);
+        log_msg("Moved to bat/: " . $file->basename . " (" . ($unexpected_parts ? "Unexpected Parts" : "No Body") . ")");
+        return;
+    }
+
+    # Append attachment manifest
+    if (@attachments) {
+        $final_body .= "\n\n--- ATTACHMENTS ---\n" . join("\n", @attachments) . "\n";
+    }
+
+    my $encoded_content = encode('UTF-8', $final_body);
     my $header_obj = $parsed->header_obj;
+    
     my $new_msg = Email::MIME->create(
         header_str => [ map { $_ => $header_obj->header($_) } $header_obj->header_names ],
         parts      => [ $encoded_content ],
@@ -81,10 +108,11 @@ sub process_message {
     $file->spew_raw($new_msg->as_string);
 }
 
-log_msg("Flattening Maildir and extracting PDF text...");
+log_msg("Flattening Maildir (Preferring plain text)...");
 no warnings 'regexp'; 
 
-for my $f ($mail_root->child("cur")->children) {
+# Process messages in cur/ using the hash reference
+for my $f ($dir{cur}->children) {
     next if $f->is_dir;
     eval { process_message($f) };
     warn "Fail $f: $@\n" if $@;

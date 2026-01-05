@@ -1,0 +1,14 @@
+#!/bin/bash
+
+l(){ echo "----------------------"; }
+for f; do
+  if true; then
+    set -- $( find "$f" -type f | sort )
+    for i; do 
+      l;
+      X="$(cat $i)";
+      echo "$X";
+    done;
+    l
+  fi > $f.eml
+done;

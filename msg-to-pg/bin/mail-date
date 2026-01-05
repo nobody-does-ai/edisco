@@ -1,0 +1,83 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Date::Parse;
+our(@VERSION) = qw( 0 1 0 );
+sub main;
+main;
+sub main {
+  my($re)=qr{date}i;
+  my($f)=1;
+  for(@ARGV) {
+    my($file)=$_;
+    if(-d) {
+      eex({dir=>$file});
+      my($path)=path($_);
+      push(@ARGV,grep { !m{/[.]} } $path->children );
+    } elsif(-f) {
+      eex({file=>$file});
+      my($path)=path($_);
+      my(@lines)=$path->lines;
+      $.=0;
+      for(@lines) {
+        ++$.;
+        say;
+        chomp;
+        last unless /\S/;
+        my($full)=$_;
+        eex( $re );
+        next unless s/^($re:)//i;
+        say "1: $1";
+        my($head)=lc($1);
+        my(@head)=$_;
+        eex(\@head);
+        my($date)=str2time(shift @head);
+        $date=serdate($date);
+        my($dest);
+        eex({date=>$date});
+        while(1) {
+          $dest=$path->parent->child($date);
+          last unless -e $dest;
+          ++$date;
+        };
+        $path->move($dest);
+        die "no $dest" unless -e $dest;
+        say $dest;
+#            map { "$head $_" } map { split }
+#            say for @head;
+#            for(split m{\s*"[^"]*"\s*}) {
+#              if($f) {
+#              } else {
+#              };
+#            }
+      };
+    } elsif ( m{^-f$} ) {
+      $f=!$f;
+    } else {
+      system("ls -l $_>&2");
+    };
+  }
+  close(STDOUT);
+};
+our(%hand);
+#INIT {
+#  use Getopt::WonderBra;
+#  sub opts {
+#    local(@_,$_)=getopt("i",@_);
+#    while(($_=shift)ne'--'){
+#      if(m{^-i$}) {
+#        $case=!$case;
+#      } else {
+#        die "bad option: $_ (@_)";
+#      };
+#    };
+#    @_;
+#  };
+#  @ARGV=opts(@ARGV);
+#};
