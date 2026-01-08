@@ -1,0 +1,54 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Getopt::WonderBra;
+our(@VERSION) = qw( 0 1 0 );
+sub main;
+my($mode);
+main(@ARGV);
+sub main {
+  $,=" ";
+  for(@ARGV) {
+    open(STDIN,"-|","pdfinfo",$_);
+    s{^src/}{pgs/};
+    my($file)="$_";
+    s{[.]pdf$}{} for($file);
+    while(<STDIN>){
+      next unless s{Pages:}{};
+      ($_)=split;
+      if($mode eq "show"){
+        print $_;
+      } elsif ( $mode eq "list" ) {
+        my($n)=$_;
+        for(1 .. $n){
+          say sprintf "$file-%03d", $_;
+        };
+      };
+    };
+  };
+};
+INIT {
+  sub help {
+  }
+  sub version {
+  };
+  local(*_)=\@ARGV;
+  @_=getopt("el",@_);
+  while(($_=shift)ne'--'){
+    if($_ eq '-e') {
+      die "mode set: $mode" if defined $mode;
+      $mode="enum";
+    } elsif ($_ eq '-l'){
+      die "mode set: $mode" if defined $mode;
+      $mode="list";
+    };
+  };
+  $mode//="show";
+  @ARGV=sort glob("src/*.pdf") unless @ARGV;
+};
