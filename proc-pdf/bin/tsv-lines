@@ -79,10 +79,12 @@ our($no);
     }
   }
   our(@line);
+  use Nobody::Util;
   sub new {
     my($class)=class(shift);
     my($page_num)=shift;
     local(@_)=map{split}shift;
+    die "bad word $_" unless @_<=12;
     local(%word);
     my($self)=\%word;
     for(my $i=0;$i<@head;$i++) {
@@ -91,6 +93,8 @@ our($no);
     $word{page_num}=$page_num;
     $word{bottom}=$word{top}+delete $word{height};
     $word{right}=$word{left}+delete $word{width};
+    $DB::single++ unless defined $word{text};
+    return undef unless defined $word{text};
     bless($self,$class);
     $self;
   }
@@ -102,19 +106,19 @@ sub group_words {
   my(@top)=uniq(map { $_->{top} } @word);
 };
 our(%file);
+sub group_words;
 sub handle_file {
   my($file,$page)=@_;
-  $DB::single=1;
   local(*_)=$file{$_}{word}=[];
   local(@_)=grep /^5/, path($_)->lines;
   $_=Word->new($page,$_) for @_;
   ++$page;
+  @_=grep{defined}@_;
+  eex([ $a, $b, $b-$a ]) if $a <=> $b;
   @_=sort { $a->top <=> $b->top } @_;
-  my($B)=scalar @_;
-  my($A)=scalar @_;
-  $"=' ';
-#      shift if(@_);
-  @_=grep { defined } @_;
+  return group_words @_;
+}
+sub group_words {
   return unless @_;
   my($bottom)=$_[0]->bottom;
   my(@gs);
@@ -126,18 +130,8 @@ sub handle_file {
       push(@group,shift(@_));
     };
     @group = sort { $a->left <=> $b->left } @group;
-    #          eex( map { $group[$_]->text } qw( -1 -2 -3 ) );
-    if($group[-1]) {
-      $group[0]->left(min(map {$_->left} @group));
-      $group[0]->right(max(map {$_->left} @group));
-      $group[0]->text(join(" ",map{$_->text} @group));
-      @group = map { { %{$_} } } @group[0];
-    } else {
-      @group = map { { %{$_} } } @group;
-    };
     push(@gs,[@group]);
   }
-    ddx(\@gs);
   return @gs;
 };
 sub main {
@@ -153,8 +147,9 @@ sub main {
   my($top,$bottom);
   my($page)=0;
   for(@file) {
-    @{$file{$_}{group}}=handle_file($page++,$_);
+    @{$file{$_}{group}}=handle_file($_,$page++);
   };
-  path("inv/invest.json")->touchpath->spew($coder->encode([\@file,\%file]));
+  my($text)=pp(\%file);
+#      path("inv/invest.json")->touchpath->spew($coder->encode([\@file,\%file]));
 }
 main(@ARGV);

@@ -89,7 +89,6 @@ sub process_pdf {
     }
 
     my $last_page = $page_count;
-    $last_page = $page_count if $last_page < 1;
 
     print STDERR "    Pages: $page_count (using 1..$last_page)\n";
 
