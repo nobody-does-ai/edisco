@@ -1,0 +1,27 @@
+#!/usr/bin/env perl
+use common::sense;
+use DBI;
+use lib ".";
+use Path::Tiny qw(path);
+use XML::LibXML::Simple qw(XMLin);
+use Nobody::Util;
+use Nobody::JSON;
+
+# usage: sms_mms_to_raw.pl backup.xml
+my $file = shift // "sms.xml";
+my $abs  = path($file)->realpath->stringify;
+
+# Parse XML into Perl hashes/arrays
+my $data = XMLin(
+    $abs,
+    KeepRoot   => 1,
+    KeyAttr    => [],
+);
+my ($json_file)=path($file)->basename(".xml");
+my ($json_file)=path($json_file.".json");
+my ($sms) = $data->{smses}->{sms};
+die "no sms" unless defined $sms;
+my ($mms) = $data->{smses}->{mms};
+die "no mms" unless defined $mms;
+my (@msg) = sort { $a->{date} <=> $b->{date} } (@$sms,@$mms);
+$json_file->spew(encode_json(\@msg));

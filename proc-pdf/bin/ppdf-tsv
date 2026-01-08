@@ -199,21 +199,3 @@ sub build {
     });
 }
 
-#    sub xxx {
-#      my $mw = MainWindow->new;
-#      $mw->title("Financial Table Inspector: $file");
-#    
-#      # 1. The Data Entry Bar (Top)
-#      my $clicked_text = "Click a word...";
-#      my $top_frame = $mw->Frame()->pack(-side => 'top', -fill => 'x');
-#    
-#      $top_frame->Label(-text => "Text:", -font => ['Helvetica', 10, 'bold'])
-#      ->pack(-side => 'left', -padx => 5);
-#    
-#      $top_frame->Entry(
-#        -textvariable => \$clicked_text,
-#        -font => ['Courier', 14], 
-#        -width => 40,
-#        -bg => 'white',
-#      )->pack(-side => 'left', -fill => 'x', -expand => 1, -padx => 5, -pady => 5);
-#    }

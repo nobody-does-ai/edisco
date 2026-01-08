@@ -31,10 +31,11 @@ sub main (@) {
 
   # No args: process all PDFs in src/
   @pdfs = sort $src_dir->children(qr/\.pdf$/i);
-
+  eex( { pdfs=>\@pdfs } );
   die "No PDFs found in src/\n" unless @pdfs;
   my (%pid);
   for my $pdf_path (@pdfs) {
+    eex( { pdf_path=>\$pdf_path } );
     unless ($pdf_path->is_file) {
       warn "Skipping '$pdf_path': not a regular file\n";
       next;
@@ -94,18 +95,11 @@ sub process_pdf {
 
     # 1. Render selected pages to PNG (document-at-a-time)
     my $img_prefix = $img_dir->child($base)->stringify;
-    eex( $img_prefix );
-    {
-      my(@list)=$img_dir->children(qr/^\Q$base\E-\d+\.png$/);
-      eex(@list);
-      return;
-    }
     my(@list) = glob("$img_prefix*.png");
+    eex( {pre=>$img_prefix,list=>\@list });
     for(@list) {
       s{[.]png$}{};
     };
-    eex( \@list );
-    exit(0);
     my @cmd = (
         'pdftoppm',
         '-png',

@@ -6,6 +6,7 @@ our(@EXPORT_OK)=qw(
 tsv_parse tsv_partition
 pdf_to_png pdf_to_pgs
 png_to_tsv pdf_page_count
+get_page_count
 );
 sub tsv_parse {
   my $path=path(map { "$_" } shift);
@@ -37,7 +38,11 @@ sub pdf_page_count {
   }
 
   my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
-  return $pages_line ? int($pages_line) : undef;
+  die "Error: Could not determine page count for $_\n" unless $pages_line;
+  return $pages_line;
+}
+sub get_page_count {
+  goto &pdf_page_count;
 }
 sub pdf_to_png($) {
   die "usage: pdf_to_png(\$png)" unless @_==1;
