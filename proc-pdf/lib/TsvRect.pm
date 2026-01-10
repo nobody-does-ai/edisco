@@ -1,18 +1,11 @@
 package TsvRect;
 use common::sense;
-use Scalar::Util qw(refaddr);
 use lib "lib";
-BEGIN { open(STDOUT,">&STDERR"); };
 BEGIN {
   use FindBin qw($Script $Bin);
   use lib "$Bin/../lib";
 };
 our(%key);
-BEGIN {
-  say refaddr \%key;
-  say refaddr \%LimHash::key;
-  *LimHash::key=\%key;
-};
 use Tsv;
 use Exporter qw(import);
 use common::sense;
@@ -20,8 +13,7 @@ use Carp::Always;
 use Nobody::PP qw(loc);
 use Nobody::Util;
 use Carp qw(carp cluck croak confess);
-use LimHash;
-our(@ISA)=qw(LimHash Tsv);
+our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
 our(@prim,%key,@head,%head);
@@ -41,11 +33,6 @@ sub dx {
     $ox2=$self->x2;
     $nx1=$ox1+$cdx/2;
     $nx2=$ox2-$cdx/2;
-    eex([
-        [ odx=>$odx,ndx=>$ndx,cdx=>$cdx, ],
-        [ ox1=>$ox1,nx1=>$nx1, ],
-        [ ox2=>$ox2,nx2=>$nx2, ],
-      ]);
   };
   return $self->{x2}-$self->{x1};
 };
@@ -178,7 +165,6 @@ sub tostring {
   for(@_){
     $_=[$_,$self->$_]
   };
-  ddx(\$_,\@_);
   $_="";
   while(!ref($_[0])) {
     for(@$_) {
@@ -186,15 +172,7 @@ sub tostring {
     };
     push(@_,{shift,undef, shift,undef});
   };
-  for(flatten(@_)){
-    say ref($_), $_ ;
-  };
-  ddx(\@_);
-  eex( join(" * ", map { pp($_) } map { m{^([a-z])[a-z]+$} || $_ } @_) );
 };
-#    sub selfpp {
-#      return sprintf("%s(%s)",ref($_[0]),$_[0]->tostring);
-#    };
 sub horz {
   my($self)=shift;
   return ($self->top, $self->bottom);
@@ -227,9 +205,5 @@ unless(caller){
   $d{y2}+=40;
   $d{x2}+=40;
   my($rect)=TsvRect->new( \%d );
-  ddx( $rect );
-  say $rect->dx;
-  say $rect->dx($rect->dx/2);
-  ddx( $rect );
 };
 1;

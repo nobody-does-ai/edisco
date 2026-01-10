@@ -9,6 +9,7 @@ use Nobody::Util;
 use Getopt::WonderBra;
 BEGIN { use lib "lib"; };
 use TsvUtil;
+use TsvUtil @TsvUtil::EXPORT_OK;
 our(@VERSION) = qw( 0 1 0 );
 
 # ppdf-big-png Split PDF into individual pages,
@@ -21,33 +22,33 @@ sub help {
 sub main (@) {
   local(@_)=@_;
   @_=sort glob("src/*.pdf") unless @_;
-
+  my(@of);
   for(@_){
     my($if)=$_;
-    my($pages)=get_page_count($if); 
-    my($fmt)="img/%s-%03d.pdf";
-    my ($op)=0;
-    my $pp=0;
-    my ($if)=path($_);
-    my ($pc)=$pages;
-    ddx({ file=>$if, pc=>$pc});
-    my ($pg);
-    for ($pg=1;$pg<$pc;$pg++ ) {
-      my ($ib)=$if->basename('.pdf');;
-      my ($of)=path(sprintf($fmt,$ib,$pp++));
-      ddx({if=>$if,ib=>$ib,pg=>$pg,of=>$of,op=>$op});
-      $of->parent->mkdir;
-      my (@cmd)=(
-        qw(qpdf),
-        $if,
-        qw( --pages .),
-        $pg,
-        '--',
-        $of);
-      system(@cmd);
-      say STDERR "extracted $pg pages from $if";
-    }
-  }
+    s{pdf$}{png};
+    my($of)=join("/",path($_)->parent,path($if)->basename(".pdf").".tmp.png");
+    my(@cmd)=qw(convert -density 300 $if -append $of);
+    for(@cmd) {
+      if(m{^\$[a-z]+$}){
+        $_=eval($_);
+      }
+    };
+    eex(@cmd);
+    next if -e $of;
+    if(my $pid=fork){
+      $of[$pid]=$of;
+    } else {
+      exec @cmd;
+    };
+  };
+  my($pid);
+  while(($pid=waitpid(0,0))>1) {
+    say "$pid returned $?";
+    my($on)=$of[$pid];
+    my($nn)=grep { s{[.]tmp[.]}{.} } $of[$pid];
+    path($on)->move($nn);
+    say $nn;
+  };
 }
 
 

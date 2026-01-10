@@ -55,7 +55,7 @@ my $imap = Mail::IMAPClient->new(
 # SIMPLE TARGET LIST
 my @targets = qw(
     lisaclaytonpaul@gmail.com
-    johnbartletpaul@gmail.com
+    johnbartlettpaul@gmail.com
     @cmplaw.com
     @pollockinvestmentadvisors.com
     @washtenaw.org

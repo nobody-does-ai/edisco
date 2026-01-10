@@ -16,20 +16,31 @@ sub main {
   $,=" ";
   for(@ARGV) {
     open(STDIN,"-|","pdfinfo",$_);
-    s{^src/}{pgs/};
-    my($file)="$_";
-    s{[.]pdf$}{} for($file);
+    my($pdf)="$_";
+    my($fmt)="$_";
+    for($fmt) {
+      s{^src/}{};
+      s{[.]pdf$}{};
+    };
     while(<STDIN>){
       next unless s{Pages:}{};
       ($_)=split;
       if($mode eq "show"){
-        print $_;
+        say $_;
       } elsif ( $mode eq "list" ) {
         my($n)=$_;
         for(1 .. $n){
-          say sprintf "$file-%03d", $_;
+          printf "png/$fmt-%03d.pdf\n", $_;
         };
-      };
+      } elsif ( $mode eq "make" ) {
+        my($n)=$_;
+        print "$pdf:=\$(patsubst %,$fmt-%.pdf,";
+        for(1 .. $n){
+          print sprintf " %03d", $_;
+        };
+        say ")";
+        say "$fmt.png:=\$(patsubst %,$fmt-%.pdf,";
+      }
     };
   };
 };
@@ -39,11 +50,14 @@ INIT {
   sub version {
   };
   local(*_)=\@ARGV;
-  @_=getopt("el",@_);
+  @_=getopt("mel",@_);
   while(($_=shift)ne'--'){
     if($_ eq '-e') {
       die "mode set: $mode" if defined $mode;
       $mode="enum";
+    } elsif ($_ eq '-m'){
+      die "mode set: $mode" if defined $mode;
+      $mode="make";
     } elsif ($_ eq '-l'){
       die "mode set: $mode" if defined $mode;
       $mode="list";

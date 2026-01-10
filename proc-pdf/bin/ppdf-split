@@ -14,12 +14,11 @@ our(@VERSION) = qw( 0 1 0 );
 
 sub get_page_count;
 sub help {
-  say("Use The Source, Luke!");
+  die("Use The Source, Luke!");
 }
 sub main (@) {
   local(@_)=@_;
   @_=glob("src/*.pdf") unless @_;
-  help();
 
   my(%pages);
   for(@_){
@@ -39,12 +38,10 @@ sub main (@) {
   for(sort keys %pages) {
     my ($if)=path($_);
     my ($pc)=$pages{$_};
-    ddx({ file=>$if, pc=>$pc});
     my ($pg);
     for ($pg=1;$pg<$pc;$pg++ ) {
       my ($ib)=$if->basename('.pdf');;
       my ($of)=path(sprintf($fmt,$ib,$pp++));
-      ddx({if=>$if,ib=>$ib,pg=>$pg,of=>$of,op=>$op});
       $of->parent->mkdir;
       my (@cmd)=(
         qw(qpdf),

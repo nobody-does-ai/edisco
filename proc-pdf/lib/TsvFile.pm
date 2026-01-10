@@ -1,11 +1,10 @@
 package TsvFile;
-BEGIN { open(STDOUT,">&STDERR"); };
 use lib 'lib';
+use Nobody::Util;
 use TsvGroup;
 use common::sense;
 our(@ISA)=qw(TsvGroup);
 use vars qw( $d $y $q $p $e );
-use Nobody::Util;
 use TsvUtil qw(tsv_parse);
 use TsvPath;
 use TsvWord;
@@ -52,7 +51,4 @@ sub tostring {
 #    sub selfpp {
 #      sprintf "%s(%s)", ref($_[0]), $_[0]->tostring;
 #    };
-unless(caller){
-  ddx( map { TsvFile->new($_) } glob("tsv/*.tsv") );
-};
 1;

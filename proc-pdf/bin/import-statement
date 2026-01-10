@@ -11,15 +11,15 @@ use Carp::Always;
 use Nobody::PP;
 use TsvFile;
 our(@VERSION) = qw( 0 1 0 );
+sub make_png;
+my $src_dir = path('src');
+my $img_dir = path('img');
+my $tsv_dir = path('tsv');
 sub main (@) {
   # Move to project root: path(__FILE__)->parent->parent
   my $root = path(__FILE__)->absolute->parent->parent;
   say "root: $root";
   chdir $root or die "Cannot chdir to project root $root: $!";
-
-  my $src_dir = path('src');
-  my $img_dir = path('img');
-  my $tsv_dir = path('tsv');
 
   # Ensure directories exist
   $src_dir->is_dir or die "$src_dir directory not found at $src_dir";
@@ -31,124 +31,136 @@ sub main (@) {
 
   # No args: process all PDFs in src/
   @pdfs = sort $src_dir->children(qr/\.pdf$/i);
-  eex( { pdfs=>\@pdfs } );
+  for(@pdfs) {
+    unless ($_->is_file) {
+      warn "Skipping '$_': not a regular file\n";
+      $_=undef;
+    }
+  };
+  @pdfs=grep{defined}@pdfs;
   die "No PDFs found in src/\n" unless @pdfs;
-  my (%pid);
-  for my $pdf_path (@pdfs) {
-    eex( { pdf_path=>\$pdf_path } );
-    unless ($pdf_path->is_file) {
-      warn "Skipping '$pdf_path': not a regular file\n";
+  $_={ pdff=> $_ } for @pdfs;
+  my $cv=AE::cv();
+  for (@pdfs) {
+    make_png($_);
+  }
+  $cv->recv;
+#      for(keys %pid){
+#        $pid{$pid{$_}}=$_;
+#      };
+#      while(scalar(%pid)){
+#        ddx(\%pid);
+#        my ($pid)=waitpid(0,0);
+#        say $pid;
+#        delete $pid{$pid{$pid}};
+#        delete $pid{$pid};
+#      };
+}
+
+my (@pid);
+# Run an external command, and if it died due to SIGINT, bail out immediately.
+#    sub run_cmd_or_die_on_sigint {
+#      my(@cmd)=@_;
+#      return system @cmd or die "system: @cmd: $?";
+#    
+#        if ($? == -1) {
+#            warn "failed to execute @cmd: $!\n";
+#            return $?;
+#        }
+#    
+#        if ($? & 127) {
+#          die "Command '@cmd' died with signal\n";
+#        } elsif (my $exit = $? >> 8) {
+#          # Non-zero exit status, but not SIGINT – treat as a normal failure.
+#          die "Command '@cmd' exited with status $exit\n";
+#        }
+#    
+#        return $?;
+#    }
+use AnyEvent;
+use AE;
+sub handle_png;
+sub make_png {
+  my(%pdf)=%{+shift};
+
+  $pdf{base}=$pdf{pdff}->basename('.pdf');
+  print STDERR "==> Processing $pdf{pdff}\n";
+  $pdf{pcnt}=get_page_count($pdf{pdff});
+  unless (defined $pdf{pcnt} && $pdf{pcnt} > 0) {
+    die "Could not determine page count for '$pdf{pdff}', skipping.\n";
+    return;
+  }
+
+  say STDERR "    Pages: $pdf{pcnt}";
+
+  # 1. Render selected pages to PNG (document-at-a-time)
+  $pdf{pfix}=$img_dir->child($pdf{base})->stringify;
+  for(@{$pdf{list} = [glob("$pdf{pfix}*.png")]}){
+    s{[.]png$}{};
+  };
+  my @cmd = (
+    'pdftoppm',
+    '-png',
+    '-r', 300,
+    '-f', 1,
+    '-l', $pdf{pcnt},
+    $pdf{pdff},
+    $pdf{pfix},
+  );
+  print STDERR "    Running: @cmd\n";
+  my($pid)=fork;
+  unless($pid) {
+    exec(@cmd);
+    die "exec @_:$!";
+  };
+  $DB::single=1;
+  $pdf{ecb}=AE::child $pid, sub { eex(\@_); handle_png(\%pdf) };
+};
+sub handle_png {
+  my(%pdf)=%{+shift};
+  # 2. Build page_number -> PNG path map, handling zero-padding
+  eex( "pdftoppm done" );
+  my %png_for_page;
+  for my $png ($->children(qr/^\Q$pdf{base}\E-\d+\.png$/)) {
+    my $name = $png->basename;
+    next unless $name =~ /^\Q$pdf{base}\E-(\d+)\.png$/;
+    my $pageno = int($1);  # '01' -> 1, '10' -> 10, etc.
+    $png_for_page{$pageno} = $png;
+  }
+
+  # 3. For each expected page, run tesseract -> TSV
+  for my $page (1 .. $pdf{last}) {
+    my $png = $png_for_page{$page};
+
+    unless ($png && $png->is_file) {
+      warn "    Missing PNG for $pdf{pdff} page $page (expected $pdf{base}-<n>.png)\n";
       next;
     }
-    process_pdf($pdf_path, $img_dir, $tsv_dir);
-  }
-  for(keys %pid){
-    $pid{$pid{$_}}=$_;
-  };
-  while(scalar(%pid)){
-    ddx(\%pid);
-    my ($pid)=waitpid(0,0);
-    say $pid;
-    delete $pid{$pid{$pid}};
-    delete $pid{$pid};
-  };
-}
 
-# Run an external command, and if it died due to SIGINT, bail out immediately.
-sub run_cmd_or_die_on_sigint {
-  my(@cmd)=@_;
-  return system @cmd or die "system: @cmd: $?";
+    my $tsv_prefix = $tsv_dir->child("$pdf{base}-$page")->stringify;
+    my $tsv_file   = $tsv_prefix . '.tsv';
 
-    if ($? == -1) {
-        warn "failed to execute @cmd: $!\n";
-        return $?;
+    # Skip if TSV already exists; comment this out if you want to re-run
+    if (-f $tsv_file) {
+      print STDERR "    [exists] $tsv_file\n";
+      next;
     }
 
-    if ($? & 127) {
-      die "Command '@cmd' died with signal\n";
-    } elsif (my $exit = $? >> 8) {
-      # Non-zero exit status, but not SIGINT – treat as a normal failure.
-      die "Command '@cmd' exited with status $exit\n";
-    }
-
-    return $?;
-}
-
-sub process_pdf {
-    my ($pdf_path, $img_dir, $tsv_dir) = @_;
-
-    my $pdf  = $pdf_path->stringify;
-    my $base = $pdf_path->basename('.pdf').'-';
-
-    print STDERR "==> Processing $pdf\n";
-
-    my $page_count = get_page_count($pdf);
-    unless (defined $page_count && $page_count > 0) {
-        die "Could not determine page count for '$pdf', skipping.\n";
-        return;
-    }
-
-    my $last_page = $page_count;
-
-    print STDERR "    Pages: $page_count (using 1..$last_page)\n";
-
-    # 1. Render selected pages to PNG (document-at-a-time)
-    my $img_prefix = $img_dir->child($base)->stringify;
-    my(@list) = glob("$img_prefix*.png");
-    eex( {pre=>$img_prefix,list=>\@list });
-    for(@list) {
-      s{[.]png$}{};
-    };
-    my @cmd = (
-        'pdftoppm',
-        '-png',
-        '-r', 300,
-        '-f', 1,
-        '-l', $last_page,
-        $pdf,
-        $img_prefix,
+    my @tcmd = (
+      'tesseract',
+      $png->stringify,
+      $tsv_prefix,
+      '-l', 'eng',
+      'tsv',
     );
-    print STDERR "    Running: @cmd\n";
-    system(@cmd);
-    die "@cmd: $?" if $?;
-
-    # 2. Build page_number -> PNG path map, handling zero-padding
-    my %png_for_page;
-    for my $png ($img_dir->children(qr/^\Q$base\E-\d+\.png$/)) {
-        my $name = $png->basename;
-        next unless $name =~ /^\Q$base\E-(\d+)\.png$/;
-        my $pageno = int($1);  # '01' -> 1, '10' -> 10, etc.
-        $png_for_page{$pageno} = $png;
-    }
-
-    # 3. For each expected page, run tesseract -> TSV
-    for my $page (1 .. $last_page) {
-        my $png = $png_for_page{$page};
-
-        unless ($png && $png->is_file) {
-            warn "    Missing PNG for $pdf page $page (expected $base-<n>.png)\n";
-            next;
-        }
-
-        my $tsv_prefix = $tsv_dir->child("$base-$page")->stringify;
-        my $tsv_file   = $tsv_prefix . '.tsv';
-
-        # Skip if TSV already exists; comment this out if you want to re-run
-        if (-f $tsv_file) {
-            print STDERR "    [exists] $tsv_file\n";
-            next;
-        }
-
-        my @tcmd = (
-            'tesseract',
-            $png->stringify,
-            $tsv_prefix,
-            '-l', 'eng',
-            'tsv',
-        );
-        print STDERR "    tesseract page $page -> $tsv_file\n";
-run_cmd_or_die_on_sigint(@tcmd);
-    }
+    print STDERR "    tesseract page $page -> $tsv_file\n";
+    my $pid=fork;
+    if(!$pid) {
+      run_cmd_or_die_on_sigint(@tcmd);
+      exit($?);
+    };
+    AE::child $pid, sub { die pp(\@_) };
+  }
 }
 
 sub get_page_count {

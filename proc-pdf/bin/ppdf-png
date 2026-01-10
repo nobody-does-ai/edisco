@@ -22,31 +22,27 @@ sub help {
 sub main (@) {
   local(@_)=@_;
   @_=sort glob("src/*.pdf") unless @_;
-  my(@of);
+  my(%of);
   for(@_){
     my($if)=$_;
     s{pdf$}{png};
     my($of)=join("/",path($_)->parent,path($if)->basename().".tmp.png");
     my(@cmd)=qw(convert -density 300 $if -append $of);
-    for(@cmd) {
-      if(m{^\$[a-z]+$}){
-        $_=eval($_);
-      }
-    };
+    $_=eval($_) for grep {  m{^\$[a-z]+$} } @cmd;
     eex(@cmd);
     next if -e $of;
     if(my $pid=fork){
-      $of[$pid]=$of;
+      $of{$pid}=$of;
     } else {
       exec @cmd;
     };
-    eex([$$,@of]);
+    eex([$$,\%of]);
   };
   my($pid);
   while(($pid=waitpid(0,0))>1) {
     say "$pid returned $?";
-    my($on)=$of[$pid];
-    my($nn)=grep { s{[.]tmp[.]}{.} } $of[$pid];
+    my($on)=$of{$pid};
+    my($nn)=grep { s{[.]tmp[.]}{.} } $of{$pid};
     path($on)->move($nn);
     say $nn;
   };

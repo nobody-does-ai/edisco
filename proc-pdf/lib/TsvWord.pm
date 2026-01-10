@@ -7,9 +7,9 @@ $|++;
 package TsvWord;
 use lib "lib";
 use common::sense;
+use Nobody::Util;
 use TsvRect;
 use autodie;
-use Nobody::Util;
 use Nobody::PP;
 our(@VERSION) = qw( 0 1 0 );
 use Tsv;
@@ -73,29 +73,5 @@ sub from {
 };
 sub text {
   return shift->{text};
-};
-#    sub tostring {
-#      local(@_)=@_;
-#      my($self)=shift;
-#      return pp(%{ %$self });
-#    };
-#    sub selfpp {
-#      say loc(join("",__PACKAGE__,"::new(".pp(@_).")")) if $DEBUG>=-1;
-#      local(@_)=@_;
-#      my($self)=shift;
-#      join("",
-#        sprintf("%s(%s){", ref($self), $self->tostring),
-#        "\n  ",
-#        pp({%$self}),
-#        "\n}",
-#        "\n");
-#    };
-unless(caller) {
-  my (@lines);# = map {m{\S}?[split]:() } split m{\n}, q{
-#      level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	text
-#      1	1	0	0	0	0	0	0	1275	1650	-1	
-#      };
-  my($path)=path([glob("tsv/*.tsv")]->[0]);
-  @lines=map { join(" ", split) } $path->lines;
 };
 1;

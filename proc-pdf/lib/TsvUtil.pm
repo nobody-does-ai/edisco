@@ -1,13 +1,16 @@
 package TsvUtil;
-use Nobody::Util;
-use base 'Exporter';
 use common::sense;
-our(@EXPORT_OK)=qw(
-tsv_parse tsv_partition
-pdf_to_png pdf_to_pgs
-png_to_tsv pdf_page_count
-get_page_count
-);
+use Nobody::Util;
+our(@EXPORT_OK);
+BEGIN {
+  @EXPORT_OK= qw(
+  tsv_parse tsv_partition
+  pdf_to_png pdf_to_pgs
+  png_to_tsv pdf_page_count
+  get_page_count
+  );
+};
+use Exporter qw(import);
 sub tsv_parse {
   my $path=path(map { "$_" } shift);
   my(@rows)=$path->lines ;
@@ -44,21 +47,21 @@ sub pdf_page_count {
 sub get_page_count {
   goto &pdf_page_count;
 }
-sub pdf_to_png($) {
-  die "usage: pdf_to_png(\$png)" unless @_==1;
-  my(@res);
+sub pdf_to_png {
+  die "usage: pdf_to_png(\$png)" unless @_;
+  return map { pdf_to_png($_) } @_ unless @_==1;
   my($fmt)="%s/%s.png";
   my($base,$dir);
   my($if)=$_[0];
-  say STDERR "doing $if";
   $base=$if->basename;
   $dir=$if->parent->basename;
   my ($of)=path(sprintf($fmt,$dir,$base));
-  push(@res,$of);
-  next if -e $of;
+  return ()  unless -e $if;
+  return $of if $of->exists;
+  eex("doing $if => $of");
   if(my $pid=fork){
     while($pid!=waitpid($pid,0)){
-      say "??? $?";
+      eex "??? $?";
     };
     die "pdftoppm:$?" if $?;
   } else {
@@ -67,22 +70,23 @@ sub pdf_to_png($) {
     exec(qw(pdftoppm -png -singlefile), $if);
     die "exec:pdftoppm:$!";
   };
-  say readlink($_) for glob "/proc/$$/fd/*";
   return $of;
 };
 sub png_to_tsv {
-  die "usage: png_to_tsv(\$png)" unless @_==1;
+  die "usage: png_to_tsv(\$png)" unless @_;
+  return map { png_to_tsv($_) } @_ unless @_==1;
   my(@res);
   my($fmt)="%s/%s";
   my($base,$dir);
   my $if=$_[0];
   $if=path($if);
+  return ()  unless -e $if->exists;
   $base=$if->basename(".png");
   $dir=$if->parent->basename;
   my ($of)=path(sprintf($fmt,$dir,$base));
-  say "doing png_to_tsv $if => $of";
   $of->parent->mkdir;
   unless ( -e "$of" ) {
+    eex("doing png_to_tsv $if => $of");
     my @tcmd = (
       'tesseract',
       '-l', 'eng',
@@ -126,7 +130,7 @@ sub pdf_to_pgs {
       my($of)=sprintf($fmt,$if->basename(".pdf"),$pg);
       push(@res,$of);
       unless(-e $of) {
-        say STDERR "xform $if to $of\n";
+        eex "xform $if to $of\n";
         path("pgs")->mkdir;
         my (@cmd)=( qw(qpdf), $if, qw( --pages .), 1+$pg, '--', $of);
         system(@cmd);
