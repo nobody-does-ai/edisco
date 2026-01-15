@@ -7,65 +7,47 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use Nobody::PP;
+use Email::MIME;
 our(@VERSION) = qw( 0 1 0 );
 sub main;
+unshift(@ARGV,'mail');
 main;
 sub main {
-  my($re);
-  open(STDOUT,"|sort");
-  my($f)=1;
+  my(%match);
   for(@ARGV) {
-    my($file)=$_;
-    if(!defined($re)){
-      $re=qr{$_}i;
-    } elsif(-d) {
+    if(-d) {
       my($path)=path($_);
       push(@ARGV,grep { !m{/[.]} } $path->children );
     } elsif(-f) {
       my($path)=path($_);
-      my(@lines)=$path->lines;
-      $.=0;
-      for(@lines) {
-        ++$.;
-        chomp;
-        last unless /\S/;
-        my($full)=$_;
-        next unless s/^($re:)\s*//;
-        say "1: $1";
-        my($head)=lc($1);
-        my(@head)=$_;
-        @head = map { split m{,\s+} } @head;
-        @head = map { local(@_)=m{^.*<\s*(.*)\s*>.*}; @_=$_ unless @_; @_; } @head;
-        eex([$full,$head, \@head]);
-#            map { "$head $_" } map { split }
-#            say for @head;
-#            for(split m{\s*"[^"]*"\s*}) {
-#              if($f) {
-#              } else {
-#              };
-#            }
+      my($mail)=Email::MIME->new($path->slurp);
+      my(@head);
+      for(sort map { lc($_) } $mail->headers) {
+        $match{$_}++;
       };
-    } elsif ( m{^-f$} ) {
-      $f=!$f;
-    } else {
-      system("ls -l $_>&2");
+#          eex(\%match);
+#          eex( \@head );
+#          my(@head)=grep { $match{$_} } map { lc($_) } @head;
+#          eex( \@head );
+
+#          my(@lines)=$path->lines;
+#          $.=0;
+#          for(@lines) {
+#            ++$.;
+#            chomp;
+#            last unless /\S/;
+#            my($full)=$_;
+#            next unless s/^($re:)\s*//;
+#            say "1: $1";
+#            my($head)=lc($1);
+#            my(@head)=$_;
+#            @head = map { split m{,\s+} } @head;
+#            @head = map { local(@_)=m{^.*<\s*(.*)\s*>.*}; @_=$_ unless @_; @_; } @head;
+#            eex([$full,$head, \@head]);
+#          };
     };
   }
+  eex(\%match);
   close(STDOUT);
 };
-our(%hand);
-#INIT {
-#  use Getopt::WonderBra;
-#  sub opts {
-#    local(@_,$_)=getopt("i",@_);
-#    while(($_=shift)ne'--'){
-#      if(m{^-i$}) {
-#        $case=!$case;
-#      } else {
-#        die "bad option: $_ (@_)";
-#      };
-#    };
-#    @_;
-#  };
-#  @ARGV=opts(@ARGV);
-#};
+

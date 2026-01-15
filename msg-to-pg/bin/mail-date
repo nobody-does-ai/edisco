@@ -38,11 +38,12 @@ sub main {
         my(@head)=$_;
         eex(\@head);
         my($date)=str2time(shift @head);
-        $date=serdate($date);
         my($dest);
         eex({date=>$date});
         while(1) {
-          $dest=$path->parent->child($date);
+          for(serdate($date)) {
+            $dest=$path->parent->child($_);
+          }
           last unless -e $dest;
           ++$date;
         };
