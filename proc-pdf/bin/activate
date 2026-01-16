@@ -1,0 +1,27 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Env qw( @PATH @PERL5LIB );
+our(@VERSION) = qw( 0 1 0 );
+
+my($pwd)=path(".");
+unshift(@PATH, $pwd->child("bin"));
+unshift(@PERL5LIB, $pwd->child("lib"));
+open(STDLOG,">>","activate.trace");
+$^F=fileno(STDLOG)+1;
+open(STDLOG,">>","activate.trace");
+die "oops" unless $^F>fileno(STDLOG);
+unless(fork) {
+  $ENV{BASH_XTRACEFD}=fileno(STDLOG);
+  exec "/bin/bash", "-x";
+  die "exec:/bin/bash:$!";
+};
+while(($_=waitpid(0,0))>2) {
+  warn "pid $_ returned $?";
+};
