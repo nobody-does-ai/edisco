@@ -8,28 +8,6 @@ BEGIN {
   use FindBin qw($Script $Bin);
   use lib "$Bin/../lib";
 };
-#    BEGIN {
-#      package X;
-#      use Nobody::Util;
-#      open(my $tty,">&STDERR");
-#      sub TIEHANDLE {
-#        my($class)=class(shift);
-#        my($self)=$tty;
-#        $tty->say(pp(\@_));
-#        return bless(\$self,$class);
-#      };
-#      sub OPEN {
-#        1;
-#      };
-#      sub PRINT {
-#        $DB::single=1;
-#        print { $tty } "@_";
-#      };
-#    };
-#    BEGIN {
-#      tie *STDOUT, 'X';
-#      tie *STDERR, 'X';
-#    };
 use Carp::Always;
 use vars (@var);
 use Carp qw( cluck confess croak carp );
@@ -40,7 +18,7 @@ use TsvFile;
 use TsvGroup;
 use TsvRect;
 use TsvWord;
-use TsvUtil qw( pdf_to_png png_to_tsv pdf_to_pgs pdf_page_count );
+use TsvUtil;
 use autodie;
 use common::sense;
 use feature qw(state);
@@ -51,11 +29,10 @@ main(@ARGV);
 exit(0);
 sub main {
   @_=glob("src/*.pdf") unless @_;
-  my(@file) = map{path($_)} @_;
-  @file=map { path($_) } pdf_to_pgs(@file);
-  @file=pdf_to_png(@file);
-  @file=png_to_tsv(@file);
-  for my $file (@file) {
-    say $file;
-  }
+  @_=shift;
+  @_ = paths(@_);
+  @_=pdf_to_pgs(@_);
+  @_=pdf_to_png(@_);
+  @_=png_to_tsv(@_);
+  @_=tsv_to_tsv(sub {s{-\d\d\d[.],.}{}},@_);
 }
