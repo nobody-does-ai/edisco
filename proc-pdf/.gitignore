@@ -26,3 +26,14 @@ q4.tar
 src
 tsv
 .gdb_history
+pdf
+*.log
+fonts
+out
+state.pl 
+stripes
+
+out
+out.data
+output.pl
+*.trace
