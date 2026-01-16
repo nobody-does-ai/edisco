@@ -8,8 +8,12 @@ BEGIN {
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
   tsv_to_tsv
-  paths
+  paths trace
   );
+};
+sub tsv_to_tsv {
+  trace(@_);
+  my($out,@list)=@_;
 };
 use Exporter qw(import);
 sub err {
@@ -18,13 +22,26 @@ sub err {
 sub paths {
   -e or die "$_ does not exist" for @_;
   @_ = map { safe_isa($_,'Path::Tiny') ? $_ : path($_) } @_;
-  say scalar(@_), " paths";
+  my($max)=max(map { length } @_);
+  say scalar(@_), " paths ($max)";
   for(@_) {
     say " => ", $_;
   };
   @_;
 };
 sub ddx { goto \&eex };
+my(%verbose)={ skip=>0, trace=>1 };
+sub gather {
+  local(@_)=@_;
+  my(%res);
+  for(@_) {
+    die "bad pair(@$_)" unless reftype($_)eq'ARRAY' and 2==@$_;
+    my($key,$val)=@$_;
+    push(@{$res{$key}},$val);
+  };
+  return %res if wantarray;
+  return \%res;
+};
 sub trace {
   my(@caller)=caller(0);
   @caller[3]=[caller(1)]->[3];
@@ -32,7 +49,14 @@ sub trace {
   for(@caller[3]){
     s{^${pkg}::}{};
   };
-  my($msg)=join(":",@caller[1,2,3],"@_");
+  my($msg);
+  if($verbose{trace}==2){
+    ($msg)=join(":",@caller[1,2,3],"@_");
+  } elsif($verbose{trace}==1) {
+    ($msg)=join(":",@caller[3],"@_");
+  } else {
+    ($msg)=$caller[3];
+  };
   say STDERR $msg;
 };
 sub tsv_parse {
@@ -58,7 +82,6 @@ sub tsv_parse {
 sub pdf_page_count {
   trace(@_);
   my ($pdf) = @_;
-
   my @cmd = ('pdfinfo', $pdf);
   my $info = qx/@cmd 2>&1/;
   die "pdfinfo failed ($?) on '$pdf': $info" if $?;
@@ -78,7 +101,7 @@ sub pdf_to_png {
   die "$if does not exist" unless -e $if;
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
   if($of->exists) {
-    err("skip  $if to $of");
+    err("skip  $if to $of") if $verbose{skips};
     return $of;
   };
   if(my $pid=fork){
@@ -105,7 +128,7 @@ sub png_to_tsv {
   my ($of)=path(sprintf($fmt,$if->basename(".png")));
   $of->parent->mkdir;
   if ( -e "$of" ) {
-    err("skip  $if to $of");
+    err("skip  $if to $of") if $verbose{skips};
   } else {
     err("xform $if to $of");
     open(my $tmp,">&STDOUT");
@@ -117,22 +140,22 @@ sub png_to_tsv {
       "-",
       'tsv',
     );
-    run(@tcmd);
+    run($if,$of,@tcmd);
     die "(@tcmd)" if $?;
   };
   return $of;
 };
 sub pdf_to_pgs {
   trace(@_);
-  return paths(map { pdf_to_pgs($_) } paths(@_)) unless 1==@_;
+  return map { pdf_to_pgs($_) } @_ unless 1==@_;
   my($fmt)="pdf/%s-%03d.pdf";
-  my ($if)=shift;
+  my ($if)=path(shift);
   my($pages)=pdf_page_count($if);
   for(my $pg=0;$pg<$pages;$pg++) {
     my($of)=path(sprintf($fmt,$if->basename(".pdf"),$pg));
     push(@_,$of);
     if(-e $of) {
-      err "skip  $if to $of";
+      err("skip  $if to $of") if $verbose{skips};
     } else {
       err "xform $if to $of";
       $of->parent->mkdir;
@@ -143,20 +166,6 @@ sub pdf_to_pgs {
   };
   return @_;
 }
-sub tsv_to_tsv {
-  my($code)=shift;
-  my(%tsv);
-  for(@_) {
-    my ($i,$o)=("$_","$_");
-    for($o){
-      $code->();
-      eex($_);
-    };
-    eex( $i, $o );
-  };
-  eex($code,\@_);
-  sort keys %tsv;
-};
 sub next_set {
   my(@word)=@_;
   my($top)=$word[0]->top;
@@ -182,12 +191,23 @@ sub tsv_partition {
 };
 sub run {
   if(my $pid=fork) {
-    return $pid;
+    my($key);
+    while(($key=waitpid(0,0))>1) {
+      say "$key returned $?";
+      return if $key==$pid;      
+    };
+    die "waitpid: $key";
   };
   my($if)=shift;
   my($of)=shift;
   my($tf)=path($of.".tmp");
   open(STDOUT,">",$tf);
+  local(@_)=@_;
+  eex(\@_);
+  for(@_) {
+    $_=eval $_ if m{^\$};
+  };
+  eex(\@_);
   system(@_);
   if($?) {
     $tf->remove;

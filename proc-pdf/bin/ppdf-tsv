@@ -25,14 +25,36 @@ use feature qw(state);
 our(@VERSION) = qw( 0 1 0 );
 our(%file);
 sub main;
+@ARGV=glob("src/*.pdf") unless @ARGV;
 main(@ARGV);
 exit(0);
+sub err {
+  say STDERR "@_";
+};
+sub fixup {
+  eex(\@_);
+  local($_,*_)=@_;
+  if($_) {
+    my($max)=$_;
+    for(@_){
+      $_->top($max+$_->top);
+    };
+  };
+  my($page)=$_[0];
+  ($page->bottom,\@_);
+};
+sub tsvset($@){
+  local($_,*_)=@_;
+  my($max)=0;
+  for(@_) {
+    eex(@_);
+  };
+};
 sub main {
-  @_=glob("src/*.pdf") unless @_;
-  @_=shift;
   @_ = paths(@_);
+  local(@_)=@_;
   @_=pdf_to_pgs(@_);
   @_=pdf_to_png(@_);
   @_=png_to_tsv(@_);
-  @_=tsv_to_tsv(sub {s{-\d\d\d[.],.}{}},@_);
+  err "DONE!";
 }

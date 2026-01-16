@@ -34,14 +34,15 @@ sub loc {
   my($pkg, $file, $line);
   do {
     ($pkg,$file,$line)=caller($idx++);
+    say $pkg;
   } while($pkg eq 'Nobody::PP');
-  join(':',$file,$line,"@_");
+  return join(':',$file,$line,"@_");
 };
 sub ppx {
   return loc(pp(@_));
 }
 sub ddx {
-  ay STDOUT ppx(@_);
+  say STDOUT ppx(@_);
 }
 sub eex {
   say STDERR ppx(@_);
@@ -302,7 +303,8 @@ BEGIN {
     my $rval = $ref ? $_[0] : \$_[0];
     shift;
     my($name, $idx, $dont_remember, $pclass, $pidx) = @_;
-
+    say STDERR join(":",__FILE__,__LINE__,@_) if $dont_remember;
+    die if $dont_remember;
     my($class, $type, $id);
     my $strval = overload::StrVal($rval);
     # Parse $strval without using regexps, in order not to clobber $1, $2,...
@@ -555,8 +557,4 @@ BEGIN {
     return $out;
   }
 }
-unless(caller) {
-  deparse( \&ddx );
-  ddx( \&ddx );
-};
 1;

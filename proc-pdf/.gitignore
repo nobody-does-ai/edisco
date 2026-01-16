@@ -37,3 +37,5 @@ out
 out.data
 output.pl
 *.trace
+src
+fonts

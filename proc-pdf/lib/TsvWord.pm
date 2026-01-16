@@ -56,6 +56,9 @@ sub new {
   for(qw(left top width height)){
     $rect{$_}=delete$data{$_};
   };
+  for(keys %data){
+    delete $data{$_} unless defined $data{$_};
+  };
   my($self)={ %data };
   $self->{rect}=TsvRect->new( %rect );
   bless($self,$class);

@@ -7,3 +7,5 @@ sms-smgs
 *.tgz
 *.tar.gz
 *hide
+fonts
+src
