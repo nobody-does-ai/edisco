@@ -1,0 +1,30 @@
+PDF Structure Analysis - 2023-Q4.pdf
+
+Account: 408541 Ara G. Paul IRA POA
+Period: October 1, 2023 - December 31, 2023
+
+INVESTMENTS Section (Pages 2-3):
+- Header: "INVESTMENTS" with account number and info
+- Columns: Number of shares | Share price | Market value
+- Securities listed with:
+  * Security name and details (e.g., "Alphabet Inc 1.998% 15 Aug 2026")
+  * Category label below (e.g., "Domestic Fixed Income", "Domestic Equity", "Alternative", "Cash & Equivalents", "International Fixed Income")
+- Total line at bottom: "Total For 408541 Ara G. Paul IRA POA" with total market value
+
+TRANSACTIONS Section (Pages 3-5+):
+- Header: "TRANSACTIONS" with account number and info
+- Columns: Date | Description | Amount
+- Transactions include:
+  * Interest payments
+  * Purchases and sales of securities
+  * Fees (One Time Fee, Investment Advisory Fee, Recurring Fee, Managed Account Fee)
+  * Cash transfers and disbursements
+  * Dividends
+  * Final maturities
+- Date format: MM/DD/YYYY
+
+Key observations:
+- Account number appears at top of each section
+- Securities are categorized by asset class
+- Transactions are chronologically ordered
+- All amounts in USD
