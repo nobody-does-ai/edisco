@@ -24,7 +24,7 @@ sub stack_slices {
   my $w = $slices[0]->width;
   my $total_h = 0;
   for my $s (@slices) {
-    die "stack_slices: width mismatch" unless $s->width == $w;
+    $w=$s->width unless $s->width == $w;
     $total_h += $s->height;
   }
 

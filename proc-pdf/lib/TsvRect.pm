@@ -138,10 +138,8 @@ sub union {
   my(@v,@h);
   @_=map { $_->rect } @_;
   for(@_) {
-    ddx($_);
     push(@h,$_->left,$_->right);
     push(@v,$_->top,$_->bottom);
-    ddx([\@h,\@v]);
   };
   @h=nsort(@h);
   @v=nsort(@v);
@@ -186,7 +184,7 @@ sub lwth {
 };
 sub ltrb {
   my($self)=shift;
-  return map { $_, $self->$_ } qw( left top right bottom );
+  return map { $_, $self->$_ } qw( x1 y1 x2 y2 );
 };
 sub key {
   my($self)=shift;

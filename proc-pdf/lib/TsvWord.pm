@@ -70,7 +70,7 @@ sub from {
   my($class)=class(shift);
   for(@_) {
     next if(safe_isa($_,'TsvWord'));
-    die "???" unless ref($_) eq "HASH";
+    die "???", pp($_) unless ref($_) eq "HASH";
     $_=TsvWord->new($_);
   };
   return @_;

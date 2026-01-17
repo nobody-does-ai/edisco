@@ -1,6 +1,7 @@
 package TsvUtil;
 use common::sense;
 use Nobody::Util;
+use List::Util;
 use lib "lib";
 use TsvWord;
 our(@EXPORT);
@@ -9,7 +10,7 @@ BEGIN {
   tsv_parse tsv_partition
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
-  tsv_to_tsv
+  tsv_to_tsv fname_parse
   paths trace
   );
 };
@@ -62,24 +63,29 @@ sub trace {
   say STDERR $msg if $msg;
 };
 sub tsv_parse {
-  trace(@_);
+  local(@_)=@_;
   my $path=path(shift);
-  my(@rows)=$path->lines ;
-  my(@cols)=map { split } shift(@rows);
-  my(@word);
-  for(@rows) {
-    my(@vals)=split;
-    my(@pair);
-    die ppx(
-      \@vals, \@cols
-    ) if @cols<@vals;
-    for(my $i=0;$i<@cols;$i++) {
-      push(@pair,$cols[$i],@vals[$i])
-    };
-    push(@word,{ @pair });
+  my @row=$path->lines;
+  chomp(@row);
+  if(!grep { m{(TRANSACTIONS|INVESTMENTS)$} } @row) {
+    return ();
   };
-  @word=TsvWord->from(@word);
-  \@word;
+  $_=[split m{[\t\n]}] for @row;
+  my @col=map{@$_}shift(@row);
+  for(@row){
+    my(%tsv);
+    @tsv{@col}=@$_;
+    $_=\%tsv;
+  };
+  @row;
+};
+sub fname_parse {
+  die "usage: fname_parse(\$file)\n" unless @_==1;
+  local(@_)=@_;
+  @_ = map { m{/(\d\d\d\d)-(Q\d)-(\d\d\d)[.]} } shift;
+  return @_ if @_;
+  @_ = map { m{/(\d\d\d\d)-(Q\d)[.]} } shift;
+  return @_;
 };
 sub pdf_page_count {
   trace(@_);

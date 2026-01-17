@@ -35,10 +35,12 @@ sub err {
 sub main {
   @_ = map { path($_) } @_;
   local(@_)=@_;
+  my(@tsv);
   for(@_) {
     say;
     local(@_)=pdf_to_pgs($_);
     @_=pdf_to_png(@_);
-    @_=png_to_tsv(@_);
+    push(@tsv,[png_to_tsv(@_)]);
   };
+  eex(\@tsv);
 }
