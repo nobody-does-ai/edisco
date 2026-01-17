@@ -15,7 +15,6 @@ use List::Util qw();
 use List::Util @List::Util::EXPORT_OK;
 use Nobody::PP;
 use TsvFile;
-use TsvGroup;
 use TsvRect;
 use TsvWord;
 use TsvUtil;
@@ -24,6 +23,8 @@ use common::sense;
 use feature qw(state);
 our(@VERSION) = qw( 0 1 0 );
 our(%file);
+use vars qw( $coder );
+*coder=\$Tsv::coder;
 sub main;
 @ARGV=glob("src/*.pdf") unless @ARGV;
 main(@ARGV);
@@ -31,30 +32,13 @@ exit(0);
 sub err {
   say STDERR "@_";
 };
-sub fixup {
-  eex(\@_);
-  local($_,*_)=@_;
-  if($_) {
-    my($max)=$_;
-    for(@_){
-      $_->top($max+$_->top);
-    };
-  };
-  my($page)=$_[0];
-  ($page->bottom,\@_);
-};
-sub tsvset($@){
-  local($_,*_)=@_;
-  my($max)=0;
-  for(@_) {
-    eex(@_);
-  };
-};
 sub main {
-  @_ = paths(@_);
+  @_ = map { path($_) } @_;
   local(@_)=@_;
-  @_=pdf_to_pgs(@_);
-  @_=pdf_to_png(@_);
-  @_=png_to_tsv(@_);
-  err "DONE!";
+  for(@_) {
+    say;
+    local(@_)=pdf_to_pgs($_);
+    @_=pdf_to_png(@_);
+    @_=png_to_tsv(@_);
+  };
 }

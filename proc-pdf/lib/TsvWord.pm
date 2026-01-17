@@ -8,6 +8,7 @@ package TsvWord;
 use lib "lib";
 use common::sense;
 use Nobody::Util;
+use Carp::Always;
 use TsvRect;
 use autodie;
 use Nobody::PP;

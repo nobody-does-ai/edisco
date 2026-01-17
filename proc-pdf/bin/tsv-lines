@@ -3,179 +3,84 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
+use lib "lib";
 use common::sense;
+use GDUtil;
+use TsvSet;
 use autodie;
 use Nobody::Util;
+use GD::Image;
 use Carp qw( croak confess carp cluck );
-use Nobody::PP;
-use JSON::XS;
-use Tie::StdHandle;
-
-my($coder) = JSON::XS->new->ascii->pretty->allow_nonref->allow_blessed ->convert_blessed;
+use Carp::Always;
+use Tsv;
+use vars qw($coder);
+*coder=\$Tsv::coder;
 use feature qw(signatures);
-my(@head);
-BEGIN {
-  @head=qw(
-  level	page	block	par	line	
-  word	left	top	width	height	conf	text
-  );
-};
 our(@VERSION) = qw( 0 1 0 );
-sub all_lines;
-our(@ref);
-use Tie::Poison;
-use vars qw{
-%file @file $file
-%word @word $word
-%line @line $line
-};
-our(%file,@file);
-our(%word,@word);
-our(%line,@line);
-require "$ENV{PWD}/lib/render.pl";
-our($no);
-{
-  package Rect;
-}
-my $mk_acc;
-BEGIN {
-  $mk_acc=sub {
-    my($name)=shift;
-    my($sub)=sub {
-      my($self)=shift;
-      $self->{$name}=shift if @_;
-      $self->{$name};
-    };
-    return $sub;
-  };
-};
-{
-  package Word;
-  our(@ISA)=qw(Rect);
-  use Nobody::Util qw( ddx class );
-  BEGIN {
-    use subs @head;
-  };
-  our($bottom,$top);
-  my(@level);
-  BEGIN {
-    @level=( "",qw(page block par line word) );
-
-    no strict 'refs';
-    for my $attr (@head, qw(bottom right)) {
-      *{__PACKAGE__ . "::$attr"} = $mk_acc->($attr);
-    }
-  }
-  our(@line);
-  use Nobody::Util;
-  sub new {
-    my($class)=class(shift);
-    local(%word);
-    my($self)=\%word;
-    state($no);
-    $word{no}=++$no;
-    @_=%{$_[0]} if @_==1;
-    %word=@_;
-    $word{level}=$level[$word{level}];
-    $word{bottom}=$word{top}+delete $word{height};
-    $word{right}=$word{left}+delete $word{width};
-    return undef unless defined($word{text}) or ($word{conf}==-1);
-    bless($self,$class);
-    eex($self);
-    $self;
-  }
-  sub height {
-    my($self)=shift;
-    my($R,$L)=\($self->{bottom},$self->{top});
-    if(@_){
-      my($W,$X)=map{$_/2} (shift,$$L+$$R);
-      ($$R,$$L)=($X+$W,$X-$W);
-    };
-    $$R-$$L;
-  };
-  sub width {
-    my($self)=shift;
-    my($R,$L)=\($self->{right},$self->{left});
-    if(@_){
-      my($W,$X)=map{$_/2} (shift,$$L+$$R);
-      ($$R,$$L)=($X+$W,$X-$W);
-    };
-    $$R-$$L;
-  };
-  sub selfpp {
-    my($self)=shift;
-    my(%self)=%$self;
-    for(qw(width height)){
-      $self{$_}=$self->$_();
-    };
-    $self{rect} = join(" ",'[',join(", ",map { sprintf("%6d",delete $self{$_}) } qw(top left width height )),']');
-    if($self{level}ne'word'){
-      $self{id}=join(" ", map { delete $self{$_} } qw( page block par line word ));
-      delete $self{$_} for qw( text conf top left word );
-    } else {
-      delete $self{$_} for qw( block par line word page top left );
-    };
-    my($type)=sprintf "%-5s", delete $self{level};
-    return join("",$type,"(",join(", ", $self{rect}, map { join("=> ",$_, $self{$_}) } grep { defined($self{$_}) } ('id',@head)),")");
-  };
-  sub TO_JSON {
-    return {%{$_[0]}};
-  };
-}
-our(@lines);
-our(%file);
-sub group_words;
-sub hash(@){
-  return map { $_, shift } @head;
-};
-sub handle_file {
-  my($file)=path(shift);
-  confess "too many" if @_;
-  my($words)=$file{$_}{word}=[];
-  for( map { { hash(split) } } grep { /^\d/ } $file->lines ) {
-    my($word)=Word->new($_);
-    push(@$words,$word);
-  };
-  exit(0);
-#      @_=grep{defined}@_;
-#      @_=sort { $a->page_num <=> $b->page_num or $a->top <=> $b->top } @_;
-#      eex( \@_ );
-#      @_;
-}
-sub group_words {
-  return unless @_;
-  my($bottom)=$_[0]->bottom;
-  my(@gs);
-  while(@_) {
-    my(@group);
-    eex($_[0]->page_num, $_[0]->text);
-    $bottom=$_[0]->bottom;
-    while(@_ and $bottom>=$_[0]->top){
-      $bottom=max($bottom,$_[0]->bottom );
-      push(@group,shift(@_));
-    };
-    @group = sort { $a->left <=> $b->left } @group;
-    eex(length(join(" ",map { $_->text } @group)));
-    push(@gs,[@group]);
-  }
-  return @gs;
-};
 sub main {
-  local(@file);
-  my($fileno);
-  local(@lines);
-  @file=splice(@_);
-  @file=sort glob("tsv/*.tsv");
-  for(0..-1+@file){
-    $file{$file[$_]}{num}=$_;
+  my(%tgt)=map { $_, 1 } qw(434097 Rich Richard John);
+  my(@tsv)=glob("tsv/*.tsv");
+  my(@im,$im);
+  my($red);
+  for my $tsv(map { path($_) } @tsv) {
+    my($png)=path(sprintf("png/%s.png",$tsv->basename(".tsv")));
+    die "no png" unless $png->exists;
+    my(@word)=$tsv->lines;
+    chomp(@word);
+    @word = map { [split m{\t}] } @word;
+    my(@col)=map { @$_ } shift(@word);
+    for(@word){
+      my(%word);
+      @word{@col}=@$_;
+      $_=\%word;
+    };
+    @word=TsvWord->from(@word);
+    @word = grep { defined($_->text) } @word;
+    @word = sort {
+      $a->top <=> $b->top
+        or
+      $a->left <=> $b->left
+        or
+      refaddr($a) <=> refaddr($b)
+    } @word;
+    for(my $i=1;$i<@word;$i++){
+      my($word)=$word[$i];
+      if($tgt{$word->text}){
+        my($t,$b)=($i,$i);
+        while($word[--$t]->bottom > $word[$i]->top) {
+          #eex("t", $t, $word[$t]->rect, $word[$t]->text, $word[$i]->rect);
+          last unless $t;
+        };
+        ++$t;
+        while($word[++$b]->top < $word[$i]->bottom) {
+          #eex("b", $t, $word[$b]->rect, $word[$b]->text, $word[$i]->rect);
+          last if $b>=@word;
+        };
+        --$b;
+        for(my $j=$t;$j<=$b;$j++){
+          eex (($word[$j]->left)-($word[$j-1]->right)) if $j>$t;
+          eex $word[$j];
+        };
+        if(grep { $_->text eq "Lisa" } @word[$t .. $b]) {
+          next;
+        };
+        unless(defined $im){
+          $im=GD::Image->newFromPng("$png",1);
+        };
+        my($y1)=$word->top-int($word->height);
+        my($y2)=$y1+$word->height*3;
+        my($sl)=slice_y($im,$y1,$y2);
+        push(@im,$sl);
+        path("tmp")->child($png->basename)->spew_raw($im->png);
+      };
+    }
+    undef($im);
+  }
+  eex(\@im);
+  $im=stack_slices(@im);
+  for my $im ($im, @im) {
+    eex( [ map { $_, $im->$_() } qw( height width ) ] );
   };
-  my($file,$line,$word);
-  my($top,$bottom);
-  for $file(@file) {
-    @{$file{$_}{group}}=handle_file($file);
-  };
-#      say $coder->encode(\%file);
-  path("inv/invest.json")->touchpath->spew($coder->encode(\%file));
+  path("image.png")->spew($im->png);
 }
-@ARGV=sort glob("tsv/*.tsv");
 main(@ARGV);

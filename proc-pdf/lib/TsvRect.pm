@@ -5,8 +5,8 @@ BEGIN {
   use FindBin qw($Script $Bin);
   use lib "$Bin/../lib";
 };
-our(%key);
 use Tsv;
+our(%key);
 use Exporter qw(import);
 use common::sense;
 use Carp::Always;
@@ -16,8 +16,7 @@ use Carp qw(carp cluck croak confess);
 our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
-our(@prim,%key,@head,%head);
-our(%key);
+our(@prim,@head,%head);
 BEGIN {
   @head=qw( top left width height );
   $_=1 for @head{+@head};
@@ -110,7 +109,7 @@ sub new {
   local($DEBUG)=2;
   local(@_)=@_;
   my($class)=class(shift);
-  @_=map { (ref eq 'ARRAY')?(@$_):($_) } @_;
+  @_ = map { (ref eq 'ARRAY')?(@$_):($_) } @_;
   @_ = map { (ref eq 'HASH') ? %$_ : $_ } @_;
   @_ = map { $key{$_} or $_ } @_;
   my(%tmp)=@_;

@@ -34,7 +34,6 @@ sub loc {
   my($pkg, $file, $line);
   do {
     ($pkg,$file,$line)=caller($idx++);
-    say $pkg;
   } while($pkg eq 'Nobody::PP');
   return join(':',$file,$line,"@_");
 };

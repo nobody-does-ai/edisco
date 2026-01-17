@@ -1,6 +1,8 @@
 package TsvUtil;
 use common::sense;
 use Nobody::Util;
+use lib "lib";
+use TsvWord;
 our(@EXPORT);
 BEGIN {
   @EXPORT= qw(
@@ -30,7 +32,7 @@ sub paths {
   @_;
 };
 sub ddx { goto \&eex };
-my(%verbose)={ skip=>0, trace=>1 };
+my(%verbose)={ skip=>0, trace=>0 };
 sub gather {
   local(@_)=@_;
   my(%res);
@@ -50,18 +52,18 @@ sub trace {
     s{^${pkg}::}{};
   };
   my($msg);
-  if($verbose{trace}==2){
+  if($verbose{trace}==3){
     ($msg)=join(":",@caller[1,2,3],"@_");
-  } elsif($verbose{trace}==1) {
+  } elsif($verbose{trace}==2) {
     ($msg)=join(":",@caller[3],"@_");
-  } else {
+  } elsif($verbose{trace}==1) {
     ($msg)=$caller[3];
   };
-  say STDERR $msg;
+  say STDERR $msg if $msg;
 };
 sub tsv_parse {
   trace(@_);
-  my $path=shift;
+  my $path=path(shift);
   my(@rows)=$path->lines ;
   my(@cols)=map { split } shift(@rows);
   my(@word);

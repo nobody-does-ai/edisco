@@ -1,19 +1,19 @@
 package GDUtil;
+use Nobody::Util;
+our(@EXPORT)=qw( slice_y stack_slices );
+use base 'Exporter';
 
 sub slice_y {
-  my ($im, $y, $h) = @_;
-  my $w = $im->width;
-  my $H = $im->height;
+  my ($im, $y1, $y2) = @_;
 
-  $y = 0 if $y < 0;
-  $h = $H - $y if $y + $h > $H;
-  die "slice_y: empty slice (y=$y h=$h H=$H)" if $h <= 0;
+  ($y1,$y2)=(min($y1,$y2),max($y1,$y2));
+  die "slice_y: empty slice (y1=$y y2=$h)" if $y2==$y1;
 
-  my $out = GD::Image->new($w, $h);     # palette image is fine for white docs
-  my $white = $out->colorAllocate(255,255,255);
-  $out->filledRectangle(0, 0, $w-1, $h-1, $white);
+  my $out = GD::Image->new($im->width, ($y2-$y1)+6);
+  my $white = $out->colorAllocate(255,0,0);
+  $out->filledRectangle(0, 0, $out->width, $out->height, $white);
 
-  $out->copy($im, 0, 0, 0, $y, $w, $h);
+  $out->copy($im, 0, 3, 0, $y1, $out->width, $y2-$y1-3);
   return $out;
 }
 
