@@ -8,6 +8,8 @@ our(@EXPORT);
 BEGIN {
   @EXPORT= qw(
   tsv_parse tsv_partition
+  tsv_parse_file tsv_combine_files
+  tsv_combine
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
   tsv_to_tsv fname_parse
@@ -62,30 +64,44 @@ sub trace {
   };
   say STDERR $msg if $msg;
 };
+sub hash {
+  local(@_)=@_;
+  @_=map { [split m{\t}] } @_;
+  my(@cols)=map { @$_ } shift;
+  for(@_) {
+    local(*_)=$_;
+    my(%word)=map { $_, shift } @cols;
+    $_=\%word;
+  };
+  \@_;
+};
+sub tsv_format {
+  local(@_)=@_;
+  my(@col)=map { @$_ } shift;
+  for (@_){
+    my($hash)=$_;
+    $_=join("\t", grep { defined } map { $hash->{$_} } @col);
+  };
+  unshift(@_,join("\t",@col));
+  eex(@_[0,1,2]);
+  @_;
+};
 sub tsv_parse {
   local(@_)=@_;
-  my $path=path(shift);
-  my @row=$path->lines;
-  chomp(@row);
-  if(!grep { m{(TRANSACTIONS|INVESTMENTS)$} } @row) {
-    return ();
-  };
-  $_=[split m{[\t\n]}] for @row;
-  my @col=map{@$_}shift(@row);
-  for(@row){
+  chomp(@_);
+  $_=[split m{[\t\n]}] for @_;
+  my @col=map{@$_}shift(@_);
+  for(@_){
     my(%tsv);
     @tsv{@col}=@$_;
     $_=\%tsv;
   };
-  @row;
+  (\@col,@_);
 };
-sub fname_parse {
-  die "usage: fname_parse(\$file)\n" unless @_==1;
-  local(@_)=@_;
-  @_ = map { m{/(\d\d\d\d)-(Q\d)-(\d\d\d)[.]} } shift;
-  return @_ if @_;
-  @_ = map { m{/(\d\d\d\d)-(Q\d)[.]} } shift;
-  return @_;
+sub tsv_parse_file {
+  return map { [ tsv_parse_file($_) ] } @_ unless @_==1;
+  my($file)=shift;
+  tsv_parse($file->lines);
 };
 sub pdf_page_count {
   trace(@_);
@@ -182,6 +198,31 @@ sub next_set {
   while($word[0]->top<$bot){
     $bot=max($bot,shift(@word)->bottom);
   };
+};
+sub tsv_combine {
+  local(@_)=@_;
+  my($off)=shift;
+  for(@_) {
+    $_->{top}+=$off;
+  };
+  $off=($_[0]->{top}+$_[0]->{height});
+  $off;
+};
+sub tsv_combine_files {
+  local(@_)=@_;
+  my($of,@if)=@_;
+  $of=path($of);
+  my($off)=0;
+  my($cols);
+  my(@tsv);
+  for(sort @if){
+    ($cols,@_)=tsv_parse_file($_);
+    $off=tsv_combine($off,@_);
+    push(@tsv,@_);
+  };
+  path($of)->touchpath->spew(join("\n",tsv_format($cols,@tsv)));
+  tsv_parse_file($of);
+  return $of;
 };
 sub tsv_partition {
   trace(@_);
