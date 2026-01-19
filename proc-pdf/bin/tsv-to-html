@@ -16,17 +16,6 @@ use vars qw($coder);
 *coder=\$Tsv::coder;
 use feature qw(signatures);
 our(@VERSION) = qw( 0 1 0 );
-sub hash {
-  local(@_)=@_;
-  @_=map { [split m{\t}] } @_;
-  my(@cols)=map { @$_ } shift;
-  for(@_) {
-    local(*_)=$_;
-    my(%word)=map { $_, shift } @cols;
-    $_=\%word;
-  };
-  \@_;
-};
 sub find_inv_tra {
   my(%page) = map { path($_)->basename(".tsv"), [ path($_)->lines ] } @_;
   my(@tsv)=sort keys %page;
@@ -38,8 +27,8 @@ sub find_inv_tra {
     my($page);
     for($page{$tsv}) {
       local(*_)=$_;
+      my($i,$t);
       $_=hash(@_);
-      say $_->{top} for @$_;
       my(@words)=grep { $a->{level}==5 } @$_ ;
       (@words)=TsvWord->from(@words);
       @words = sort { $a->top <=> $b->top } @words;
@@ -56,70 +45,58 @@ sub find_inv_tra {
     };
   }
   \%page;
-#      eex(\%page);
 };
 our(%page);
 sub group_text {
-  return join(" - ", map { $_->text } @_);
+  return join(" ", map { $_->text } @_);
 };
+my(%trig) = map { $_, 1 } qw( TRANSACTIONS INVESTMENTS );
 sub find_group {
+  local(@_)=@_;
   local(*_)=shift;
   my(@word)=shift;
+  return \@word if $trig{$word[0]->text};
   my($top,$bot)=($word[0]->top,$word[0]->bottom);
   ($top,$bot)=(min($top,$bot),max($top,$bot));
   for (my $i=0;$i<@_;$i++) {
     my($word)=$_[$i];
-    my($t,$b)=($word->top,$word->bottom);
-    next if (($t<$top && $b<$top) or ($t>$bot && $b>$bot));
+    my($a)=sum($word->top,$word->bottom)/2;
+    next unless (($a>$top && $a<$bot));
     push(@word,splice(@_,$i,1,undef));
   };
-  for(@word) {
-    eex $_->top, $_->bottom, $_->text;
-  };
-  say STDERR "\n\n";
   @_=grep { defined } @_;
   \@word;
 };
 sub main {
-  my(@tsv)=map { path($_) } glob("tsv/*.tsv");
-  my(%page);
-  my(@group);
-  my(%trig) = map { $_, 1 } qw( TRANSACTIONS INVESTMENTS );
+  local(@_)=@_;
+  my(@tsv)=map { path($_) } sort glob("tsv/202?-Q?.tsv");
   for(sort @tsv){
-    my(@page);
-    @_=tsv_parse($_);
+    my(@group);
+    my($of)=$_;
+    for($of){
+      s{tsv}{html}g;
+      $_=path($_);
+    };
+    eex({of=>$of});
+    @_=tsv_parse_file($_);
+    shift;
+    pop(@_) for 1 .. 4;
     next unless @_;
     @_=TsvWord->from(@_);
+    next unless grep { $trig{$_->text} } @_;
     @_=grep { $_->level == 5 } @_;
+    for(@_) {
+      last if $trig{$_->text};
+      $_=undef 
+    };
+    @_=grep { defined } @_;
+    say scalar(@_);
     while(@_){
       push(@group,find_group(\@_));
     };
+    for(@group) {
+      push(@$_,group_text(@$_));
+    };
   };
-  for(@group) {
-    say group_text(@$_);
-  };
-  #  path("pages.json")->spew($coder->encode(\%page));
-#      for(@page){
-#        local(*_)=$_;
-#        @_=sort { $a->{top} <=> $b->{top} or $a->{left} <=> $b->{left} } @_;
-#      };
-#      my($high)=0;
-#      for my ($page)(@page){
-#        local(*_)=$page;
-#        say ref($_) for @_;
-#      };
-#        @_=sort { $a->top <=> $b->top } @_;
-#        my(@group);
-#        while(@_){
-#          my($i,$o)=([],[]);
-#          my($t)=$_[0]->top;
-#          while(@_) {
-#            push(@{($t==$_->top?$i:$o)},$_=shift);
-#          };
-#          eex( { i=>$i, o=>$o } );
-#          @_=@{$o};
-#          push(@group,$i);
-#        };
-#      };
 }
 main(@ARGV);

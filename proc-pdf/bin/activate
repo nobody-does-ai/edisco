@@ -13,15 +13,13 @@ our(@VERSION) = qw( 0 1 0 );
 my($pwd)=path(".");
 unshift(@PATH, $pwd->child("bin"));
 unshift(@PERL5LIB, $pwd->child("lib"));
-open(STDLOG,">>","activate.trace");
-$^F=fileno(STDLOG)+1;
-open(STDLOG,">>","activate.trace");
 die "oops" unless $^F>fileno(STDLOG);
 unless(fork) {
   $ENV{BASH_XTRACEFD}=fileno(STDLOG);
-  exec "/bin/bash", "-x";
+  exec "/bin/bash";
   die "exec:/bin/bash:$!";
 };
+$_='IGNORE' for values %SIG;
 while(($_=waitpid(0,0))>2) {
   warn "pid $_ returned $?";
 };

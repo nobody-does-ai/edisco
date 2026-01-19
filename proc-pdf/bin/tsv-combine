@@ -1,0 +1,111 @@
+#!/opt/bin/vi-perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use TsvSet;
+use autodie;
+use Nobody::Util;
+use TsvUtil;
+use Carp qw( croak confess carp cluck );
+use Carp::Always;
+use Tsv;
+use vars qw($coder);
+*coder=\$Tsv::coder;
+our(@VERSION) = qw( 0 1 0 );
+sub hash {
+  local(@_)=@_;
+  @_=map { [split m{\t}] } @_;
+  my(@cols)=map { @$_ } shift;
+  for(@_) {
+    local(*_)=$_;
+    my(%word)=map { $_, shift } @cols;
+    $_=\%word;
+  };
+  \@_;
+};
+our(%doc);
+sub trav($&@);
+sub add_doc {
+  my($path,$full)=$_;
+  @doc{qw(d y q p e)}=split(m{[/.-]});
+  my $time=join("-",map { delete $doc{$_} } qw( y q ));
+  my $page=delete $doc{p};
+  for(qw(pdf png tsv)) {
+    for($doc{$time}{page}{$page}{$_}=sprintf("%s/%s-%s.%s",$_,$time,$page,$_)){
+      $_=path($_);
+    };
+    for($doc{$time}{$_}=sprintf("%s/%s.%s",$_,$time,$_)){
+      $_=path($_);
+    };
+  };
+  delete $doc{$_} for grep { length == 1 } keys %doc;
+};
+{
+  my(%trav,%seen);
+  $trav{HASH}{G}=sub { values %{$_[0]} };
+  $trav{ARRAY}{G}=sub { @{$_[0]} };
+  $trav{SCALAR}{G}=sub { ${$_[0]} };
+  $trav{REF}{G}=sub { ${$_[0]} };
+  $trav{GLOB}{G}=sub {
+    my($g)=shift;
+    map { *{$g}{$_} } qw( HASH ARRAY SCALAR GLOB );
+  };
+  sub trav($&@)
+  {
+    local(@_)=@_;
+    my($obj,$sub,@path)=@_;
+    if( $seen{$obj}++>20 ) {
+      cluck "seen: $_";
+      return;
+    };
+    $sub->($obj);
+    if(defined($obj)) {
+      my($type)=reftype($obj);
+      if($type ne ref($obj)){
+        eex($obj);
+        return;
+      };
+      if(my $get=$trav{$type}{G}) {
+        my (@obj)=$get->($obj);
+        my($cnt)=0;
+        for(@obj){
+          ++$cnt;
+          &trav($_,$sub) if ref;
+        };
+      } else {
+        say "noget($_)";
+      };
+    } else {
+      say "undef";
+    };
+  };
+}
+sub main {
+  add_doc($_) for map { path($_) } map { glob($_) } map { "$_/2024-Q1*.$_" } qw(tsv png pdf);
+  my(@page);
+  for my $time(keys %doc) {
+    for my $part(sort keys %{$doc{$time}{page}}) {
+      for my $file($doc{$time}{page}{$part}{tsv}) {
+        my(@text)=$file->lines;
+        chomp(@text);
+        if(grep { m{(TRANSACTIONS|INVESTMENTS)$} } @text) {
+          push(@page,$file);
+        };
+      };
+    };
+  };
+  for(@page) {
+    my(@tsv)=TsvWord->from(tsv_parse_file($_));
+    @tsv = grep { $_->level == 5 } @tsv;
+    my(@top) = map { $_->top } @tsv;
+    say min(@top), " ", max(@top);
+    pop(@tsv),pop(@tsv), pop(@tsv), pop(@tsv);
+    @tsv = sort { $a->top <=> $b->top } @tsv;
+    eex(avg(map { $_->height } @tsv));
+
+  };
+}
+main(@ARGV);

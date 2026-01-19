@@ -36,11 +36,13 @@ sub main {
   @_ = map { path($_) } @_;
   local(@_)=@_;
   my(@tsv);
-  for(@_) {
-    say;
-    local(@_)=pdf_to_pgs($_);
+  for my $pdf(@_) {
+    my($tsv)=grep { s{(pdf|src)}{tsv}g } $pdf->stringify;
+    local(@_)=pdf_to_pgs($pdf);
     @_=pdf_to_png(@_);
-    push(@tsv,[png_to_tsv(@_)]);
+    @_=png_to_tsv(@_);
+    @_=tsv_combine_files($tsv,@_);
+    push(@tsv,[@_]);
   };
   eex(\@tsv);
 }
