@@ -95,19 +95,16 @@ sub from {
 #    };
 sub hash {
   local(@_)=@_;
-  say scalar(@_), " rows";
   if(@cols) {
     local(@_)=map { @$_ } shift;
     die "col mismatch (@_ != @cols)" unless "@_" eq "@cols";
   } else {
     @cols=map { @$_ } shift;
   };
-  say scalar(@_), " rows";
   for(@_) {
     local(@_)=@$_;
     $_={ map { $_, shift } @cols };
   };
-  say scalar(@_), " rows";
   @_;
 };
 sub load_file {

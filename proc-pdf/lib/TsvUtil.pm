@@ -33,16 +33,6 @@ use Exporter qw(import);
 sub err {
   say STDERR "@_";
 };
-#    sub paths {
-#      -e or die "$_ does not exist" for @_;
-#      @_ = map { safe_isa($_,'Path::Tiny') ? $_ : path($_) } @_;
-#      my($max)=max(map { length } @_);
-#      say scalar(@_), " paths ($max)";
-#      for(@_) {
-#        say " => ", $_;
-#      };
-#      @_;
-#    };
 sub gather {
   local(@_)=@_;
   my(%res);
@@ -58,11 +48,9 @@ sub tsv_format {
   local(@_)=@_;
   die "no cols" unless @cols>10;
   while(grep { ref } @_) {
-    say scalar(@_), " objs";
     for(my $i=0;$i<@_;$i++) {
       if(ref($_[$i]) eq 'ARRAY') {
         splice(@_,$i,1,@{$_[$i]});
-        say scalar(@_), " objs";
       } elsif(ref($_[$i])) {
         my($hash)=$_[$i];
         $_=join("\t", map { $hash->{$_} } @cols);
@@ -72,28 +60,6 @@ sub tsv_format {
   };
   join("\n",@_,"");
 };
-#      our(%hash);
-#      say scalar(@_), " things to write";
-#      my(@rows);
-#      while (@_){
-#        say scalar(@rows), " rows";
-#        my($data)=shift;
-#        my($type)=ref($data);
-#        eex({type=>$type});
-#        if($type eq 'ARRAY') {
-#          unshift(@_,@{$data});
-#        } elsif ($type eq 'HASH') {
-#          local(*hash)=$data;
-#          unshift(@_,join("\t",@hash{@cols})."\n");
-#        } elsif ($type eq "") {
-#          push(@rows,$data);
-#          say scalar(@rows), " rows", length($data);
-#        };
-#      };
-#      say scalar(@rows), "lines";
-#      say length for @rows;
-#      @rows=join("\n",@rows);
-#      say length for @rows;
 sub pdf_page_count {
   my ($pdf) = @_;
   my @cmd = ('pdfinfo', $pdf);
@@ -117,9 +83,7 @@ sub tsv_to_one {
   say scalar(@itsv), " files to parse";
   for(@itsv) {
     local(@_)=TsvWord->parse_file($_);
-    say "read ", scalar(@_), " lines from $_";
     for my $tsv(@_) {
-      say ref($tsv);
       for my $key(keys %max) {
         $tsv->{$key}+=$off{$key};
         $max{$key}=max($max{$key},$tsv->{$key});
@@ -128,12 +92,7 @@ sub tsv_to_one {
     push(@tsv,[@_]);
     %off=%max;
   };
-  say "read ", scalar(@tsv), " files";
-  for(@tsv) {
-    say "read ", scalar(@$_), " objects";
-  };
   $otsv->remove;
-  say "read ", scalar(@tsv), " files";
   @tsv=tsv_format(@tsv);
   $otsv->touchpath->spew(
     @tsv
@@ -175,8 +134,6 @@ sub png_to_tsv {
     err("skip  $if to $of") if $verbose{skips};
   } else {
     err("xform $if to $of");
-    open(my $tmp,">&STDOUT");
-    open(STDOUT,">",$of);
     my @tcmd = (
       'tesseract',
       '-l', 'eng',
@@ -248,7 +205,6 @@ sub run {
   if(my $pid=fork) {
     my($key);
     while(($key=waitpid(0,0))>1) {
-      say "$key returned $?";
       return if $key==$pid;      
     };
     die "waitpid: $key";
@@ -258,17 +214,15 @@ sub run {
   my($tf)=path($of.".tmp");
   open(STDOUT,">",$tf);
   local(@_)=@_;
-  eex(\@_);
   for(@_) {
     $_=eval $_ if m{^\$};
   };
-  eex(\@_);
   system(@_);
   if($?) {
     $tf->remove;
     die "($if,$of,@_)";
   };
   $tf->move($of);
-  $of;
+  exit(0);
 };
 1;

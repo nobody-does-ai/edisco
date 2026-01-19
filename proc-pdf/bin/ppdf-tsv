@@ -47,7 +47,5 @@ sub main {
     @_=pdf_to_png(@_);
     @_=png_to_tsv(@_);
     @_=tsv_to_one($tsv,@_);
-    system("wc -l $tsv");
   };
-  system("wc -l tsv/*.tsv | sort -n");
 } 
