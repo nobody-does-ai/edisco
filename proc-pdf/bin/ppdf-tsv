@@ -23,6 +23,10 @@ use common::sense;
 use feature qw(state);
 our(@VERSION) = qw( 0 1 0 );
 our(%file);
+# this gathers all the modules used and puts them into
+# the lib directory.  not normally needed, should be
+# commented out.
+#require "$ENV{HOME}/stow/ex-code/gather.pl";
 use vars qw( $coder );
 *coder=\$Tsv::coder;
 sub main;
