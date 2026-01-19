@@ -1,0 +1,66 @@
+#!/opt/bin/vi-perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use GDUtil;
+use TsvSet;
+use autodie;
+use Nobody::Util;
+use GD::Image;
+use Carp qw( croak confess carp cluck );
+use Carp::Always;
+use Tsv;
+use TsvUtil;
+use vars qw($coder);
+*coder=\$Tsv::coder;
+use feature qw(signatures);
+our(@VERSION) = qw( 0 1 0 );
+sub main {
+  my(@tsv)=sort glob("tsv/2024-Q1-000.tsv");
+  my(@im,$im);
+  my($red);
+  my($height);
+  for my $tsv(map { path($_) } @tsv) {
+    my($png)=path(sprintf("png/%s.png",$tsv->basename(".tsv")))->basename;
+    $png=path($png);
+    my($col,@tsv)=tsv_parse_file($tsv);
+    @_=reverse grep { $_->{level} == 1 } @tsv;
+    $height=$_[0]->{top}+$_[0]->{height};
+    my $out = GD::Image->new($_[0]->{width},$_[0]->{height});
+    @tsv=TsvWord->from(@tsv);
+    my(@color)=(
+      $out->colorResolve(0,0,0),
+      $out->colorResolve(255,255,255),
+      $out->colorResolve(255,0,0),
+      $out->colorResolve(0,255,0),
+      $out->colorResolve(0,0,255),
+      $out->colorResolve(0,255,255),
+      $out->colorResolve(255,0,255),
+      $out->colorResolve(255,255,0),
+    );
+    eex(\@color);
+    $out->filledRectangle(0,0,$out->height,$out->width,$color[0]);
+    @color=grep { $_>1 } @color;
+    eex(\@color);
+    my($color);
+    for(sort { $a->{level} <=> $b->{level} } @tsv) {
+      next if($_->level != 5);
+      eex($_);
+      eex($color[$_->level]); 
+      $out->filledRectangle($_->left-2,$_->top-2,$_->right+2,$_->bottom+2,1);
+      $out->filledRectangle($_->left,$_->top,$_->right,$_->bottom,0);
+      $out->filledRectangle($_->left+2,$_->top+2,$_->right-2,$_->bottom-2,$color[++$color%@color]);      
+    };
+    $png->spew_raw($out->png);
+  }
+
+#      $im=stack_slices(@im);
+#      for my $im ($im, @im) {
+#        eex( [ map { $_, $im->$_() } qw( height width ) ] );
+#      };
+#      path("image.png")->spew($im->png);
+}
+main(@ARGV);
