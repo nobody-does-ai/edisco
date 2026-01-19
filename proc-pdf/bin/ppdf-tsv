@@ -30,7 +30,8 @@ our(%file);
 use vars qw( $coder );
 *coder=\$Tsv::coder;
 sub main;
-@ARGV=glob("src/*.pdf") unless @ARGV;
+#    @ARGV=glob("src/2024-Q4.pdf") unless @ARGV;
+@ARGV=glob("src/202?-Q?.pdf") unless @ARGV;
 main(@ARGV);
 exit(0);
 sub err {
@@ -41,14 +42,12 @@ sub main {
   local(@_)=@_;
   my(@tsv);
   for my $pdf(@_) {
-    my($tsv)=grep { s{(pdf|src)}{tsv}g } $pdf->stringify;
+    my($tsv)=path(grep { s{(pdf|src)}{tsv}g } $pdf->stringify);
     local(@_)=pdf_to_pgs($pdf);
     @_=pdf_to_png(@_);
     @_=png_to_tsv(@_);
-    my(@goners)=@_;
-    @_=tsv_combine_files($tsv,@_);
-#        $_->remove for @goners;
-    push(@tsv,@_);
+    @_=tsv_to_one($tsv,@_);
+    system("wc -l $tsv");
   };
-  say for @tsv;
-}
+  system("wc -l tsv/*.tsv | sort -n");
+} 

@@ -8,6 +8,7 @@ use Nobody::Util qw(max);
 
 # Usage: ./tsv-render input.tsv output.png
 my ($in_file, $out_file) = @ARGV;
+$in_file="tsv/2024-Q1.tsv" unless defined $in_file;
 die "Usage: $0 input.tsv output.png\n" unless $in_file;
 unless(defined($out_file)) {
   for($out_file="$in_file")  {
@@ -15,26 +16,19 @@ unless(defined($out_file)) {
     $_="$_.png";
   };
 };
-eex( { in_file=>$in_file, out_file=>$out_file } );
-my $tsv = TsvFile->new($in_file);
-my $rows = $tsv->atsv;
+eex( $in_file, $out_file );
+my $tsv = [ TsvWord->load_file($in_file) ];
+my @rows = @$tsv;
 
 # Optimized: Try to get dimensions from Page object (Level 1)
-my $page = (grep { $_->level == 1 } @$rows)[0];
+my ($page) = (grep { $_->level == 1 } @rows);
 
-my @words = grep { $_->level == 5 } @$rows;
+my @words = grep { $_->level == 5 } @rows;
 die "No words found in TSV.\n" unless @words;
 
 my ($width, $height);
-if ($page) {
-    $width  = $page->width;
-    $height = $page->height;
-}
-else {
-    # Fallback to max algorithm
-    $width  = max(map { $_->right } @words) + 50;
-    $height = max(map { $_->bottom } @words) + 50;
-}
+$width  = $page->width;
+$height = $page->height;
 
 my $image = Image::Magick->new(size => "${width}x${height}");
 $image->Read('xc:white');

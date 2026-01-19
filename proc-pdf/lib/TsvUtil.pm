@@ -4,42 +4,45 @@ use Nobody::Util;
 use List::Util;
 use lib "lib";
 use TsvWord;
+use TsvRect;
 our(@EXPORT);
 BEGIN {
   @EXPORT= qw(
-  tsv_parse tsv_partition
-  tsv_parse_file tsv_combine_files
-  tsv_combine
-  pdf_to_png pdf_to_pgs
-  png_to_tsv pdf_page_count
-  tsv_to_tsv fname_parse
-  paths trace find_group
-  group_text
+fname_parse
+group_find
+group_text
+pdf_page_count
+pdf_to_pgs
+pdf_to_png
+png_to_tsv
+tsv_combine_files
+tsv_parse
+tsv_parse_file
+tsv_partition
+tsv_to_one
   );
 };
 sub group_text {
   return join(" ", map { $_->text } @_);
 };
-sub tsv_to_tsv {
-  trace(@_);
-  my($out,@list)=@_;
+our(@cols);
+BEGIN { 
+  *cols=\@TsvWord::cols;
 };
 use Exporter qw(import);
 sub err {
   say STDERR "@_";
 };
-sub paths {
-  -e or die "$_ does not exist" for @_;
-  @_ = map { safe_isa($_,'Path::Tiny') ? $_ : path($_) } @_;
-  my($max)=max(map { length } @_);
-  say scalar(@_), " paths ($max)";
-  for(@_) {
-    say " => ", $_;
-  };
-  @_;
-};
-sub ddx { goto \&eex };
-my(%verbose)={ skip=>0, trace=>0 };
+#    sub paths {
+#      -e or die "$_ does not exist" for @_;
+#      @_ = map { safe_isa($_,'Path::Tiny') ? $_ : path($_) } @_;
+#      my($max)=max(map { length } @_);
+#      say scalar(@_), " paths ($max)";
+#      for(@_) {
+#        say " => ", $_;
+#      };
+#      @_;
+#    };
 sub gather {
   local(@_)=@_;
   my(%res);
@@ -51,63 +54,47 @@ sub gather {
   return %res if wantarray;
   return \%res;
 };
-sub trace {
-  my(@caller)=caller(0);
-  @caller[3]=[caller(1)]->[3];
-  my($pkg)=__PACKAGE__;
-  for(@caller[3]){
-    s{^${pkg}::}{};
-  };
-  my($msg);
-  if($verbose{trace}==3){
-    ($msg)=join(":",@caller[1,2,3],"@_");
-  } elsif($verbose{trace}==2) {
-    ($msg)=join(":",@caller[3],"@_");
-  } elsif($verbose{trace}==1) {
-    ($msg)=$caller[3];
-  };
-  say STDERR $msg if $msg;
-};
-sub hash {
-  local(@_)=@_;
-  @_=map { [split m{\t}] } @_;
-  my(@cols)=map { @$_ } shift;
-  for(@_) {
-    local(*_)=$_;
-    my(%word)=map { $_, shift } @cols;
-    $_=\%word;
-  };
-  \@_;
-};
 sub tsv_format {
   local(@_)=@_;
-  my(@col)=map { @$_ } shift;
-  for (@_){
-    my($hash)=$_;
-    $_=join("\t", grep { defined } map { $hash->{$_} } @col);
+  die "no cols" unless @cols>10;
+  while(grep { ref } @_) {
+    say scalar(@_), " objs";
+    for(my $i=0;$i<@_;$i++) {
+      if(ref($_[$i]) eq 'ARRAY') {
+        splice(@_,$i,1,@{$_[$i]});
+        say scalar(@_), " objs";
+      } elsif(ref($_[$i])) {
+        my($hash)=$_[$i];
+        $_=join("\t", map { $hash->{$_} } @cols);
+        $_[$i]=$_;
+      };
+    };
   };
-  unshift(@_,join("\t",@col));
-  @_;
+  join("\n",@_,"");
 };
-sub tsv_parse {
-  local(@_)=@_;
-  chomp(@_);
-  $_=[split m{[\t\n]}] for @_;
-  my @col=map{@$_}shift(@_);
-  for(@_){
-    my(%tsv);
-    @tsv{@col}=@$_;
-    $_=\%tsv;
-  };
-  (\@col,@_);
-};
-sub tsv_parse_file {
-  return map { [ tsv_parse_file($_) ] } @_ unless @_==1;
-  my($file)=shift;
-  tsv_parse($file->lines);
-};
+#      our(%hash);
+#      say scalar(@_), " things to write";
+#      my(@rows);
+#      while (@_){
+#        say scalar(@rows), " rows";
+#        my($data)=shift;
+#        my($type)=ref($data);
+#        eex({type=>$type});
+#        if($type eq 'ARRAY') {
+#          unshift(@_,@{$data});
+#        } elsif ($type eq 'HASH') {
+#          local(*hash)=$data;
+#          unshift(@_,join("\t",@hash{@cols})."\n");
+#        } elsif ($type eq "") {
+#          push(@rows,$data);
+#          say scalar(@rows), " rows", length($data);
+#        };
+#      };
+#      say scalar(@rows), "lines";
+#      say length for @rows;
+#      @rows=join("\n",@rows);
+#      say length for @rows;
 sub pdf_page_count {
-  trace(@_);
   my ($pdf) = @_;
   my @cmd = ('pdfinfo', $pdf);
   my $info = qx/@cmd 2>&1/;
@@ -117,13 +104,44 @@ sub pdf_page_count {
   return $pages_line;
 }
 sub get_page_count {
-  trace(@_);
   goto &pdf_page_count;
 }
+my(%verbose);
+sub tsv_to_one {
+  die "send paths" unless @_==(grep { safe_isa($_,'Path::Tiny') } @_);
+  local(@_)=@_;
+  my($otsv,@itsv)=splice@_;
+  my(@tsv);
+  my(%max)=qw( block_num 0 page_num 0 height 0 );
+  my(%off)=%max;
+  say scalar(@itsv), " files to parse";
+  for(@itsv) {
+    local(@_)=TsvWord->parse_file($_);
+    say "read ", scalar(@_), " lines from $_";
+    for my $tsv(@_) {
+      say ref($tsv);
+      for my $key(keys %max) {
+        $tsv->{$key}+=$off{$key};
+        $max{$key}=max($max{$key},$tsv->{$key});
+      };
+    };
+    push(@tsv,[@_]);
+    %off=%max;
+  };
+  say "read ", scalar(@tsv), " files";
+  for(@tsv) {
+    say "read ", scalar(@$_), " objects";
+  };
+  $otsv->remove;
+  say "read ", scalar(@tsv), " files";
+  @tsv=tsv_format(@tsv);
+  $otsv->touchpath->spew(
+    @tsv
+  );
+};
 sub pdf_to_png {
   die "usage: pdf_to_png(\$png)" unless @_;
   return map { pdf_to_png($_) } @_ unless @_==1;
-  trace(@_);
   my($if)=path($_[0]);
   die "$if does not exist" unless -e $if;
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
@@ -147,7 +165,6 @@ sub pdf_to_png {
 sub png_to_tsv {
   die "usage: png_to_tsv(\$png)" unless @_;
   return map { png_to_tsv($_) } @_ unless @_==1;
-  trace(@_);
   my($fmt)="tsv/%s.tsv";
   my($base,$dir);
   my $if=shift;
@@ -173,7 +190,6 @@ sub png_to_tsv {
   return $of;
 };
 sub pdf_to_pgs {
-  trace(@_);
   return map { pdf_to_pgs($_) } @_ unless 1==@_;
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
@@ -227,22 +243,6 @@ sub find_group {
   @_=grep { defined } @_;
   @word=sort { $a->left <=> $b->left } @word;
   \@word;
-};
-sub tsv_combine_files {
-  local(@_)=@_;
-  my($of,@if)=@_;
-  $of=path($of);
-  my($off)={};
-  my($cols);
-  my(@tsv);
-  for(sort @if){
-    ($cols,@_)=tsv_parse_file($_);
-    $off=tsv_combine($off,@_);
-    push(@tsv,@_);
-  };
-  path($of)->touchpath->spew(join("\n",tsv_format($cols,@tsv)));
-  tsv_parse_file($of);
-  return $of;
 };
 sub run {
   if(my $pid=fork) {

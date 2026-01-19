@@ -19,7 +19,7 @@ use vars qw($coder);
 use feature qw(signatures);
 our(@VERSION) = qw( 0 1 0 );
 sub main {
-  my(@tsv)=sort glob("tsv/2024-Q1-000.tsv");
+  my(@tsv)=sort glob("tsv/202?-Q?-???.tsv");
   my(@im,$im);
   my($red);
   my($height);

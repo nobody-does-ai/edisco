@@ -9,13 +9,13 @@ use lib "lib";
 use common::sense;
 use Nobody::Util;
 use Carp::Always;
-use TsvRect;
+use TsvUtil;
 use autodie;
 use Nobody::PP;
 our(@VERSION) = qw( 0 1 0 );
-use Tsv;
 our(@ISA)=qw(Tsv);
 our($DEBUG);
+our(@cols);
 BEGIN {
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
@@ -77,9 +77,54 @@ sub from {
   for(@_) {
     next if(safe_isa($_,'TsvWord'));
     die "???", pp($_) unless ref($_) eq "HASH";
-    $_=TsvWord->new($_);
+    $_=$class->new($_);
   };
   return @_;
+};
+#    sub tsv_parse {
+#      local(@_)=@_;
+#      chomp(@_);
+#      $_=[split m{[\t\n]}, @_];
+#      my @col=map{@$_}shift(@_);
+#      for(@_){
+#        my(%tsv);
+#        @tsv{@col}=@$_;
+#        $_=\%tsv;
+#      };
+#      (\@col,@_);
+#    };
+sub hash {
+  local(@_)=@_;
+  say scalar(@_), " rows";
+  if(@cols) {
+    local(@_)=map { @$_ } shift;
+    die "col mismatch (@_ != @cols)" unless "@_" eq "@cols";
+  } else {
+    @cols=map { @$_ } shift;
+  };
+  say scalar(@_), " rows";
+  for(@_) {
+    local(@_)=@$_;
+    $_={ map { $_, shift } @cols };
+  };
+  say scalar(@_), " rows";
+  @_;
+};
+sub load_file {
+  my($self)=shift;
+  $self->from($self->parse_file(@_));
+};
+sub parse_file {
+  die "usage: TsvWord->load_file(CLASS->path(\"name\"))" unless (
+    @_==2
+      and
+    $_[0] eq __PACKAGE__
+  );
+  local(@_)=@_;
+  my($class,$file)=@_;
+  $file=path($file) unless ref($file);
+  @_=hash(map { [split m{[\t\n]}] } $file->lines);
+  @_;
 };
 sub text {
   return shift->{text};

@@ -5,10 +5,10 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
 $|++;
 use lib "lib";
 use common::sense;
-use TsvSet;
 use autodie;
 use Nobody::Util;
 use TsvUtil;
+use TsvWord;
 use Carp qw( croak confess carp cluck );
 use Carp::Always;
 use Tsv;
@@ -41,39 +41,40 @@ sub space_text {
 sub main {
   local(@_)=@_;
   my(@tsv)=map { path($_) } sort glob("tsv/2024-Q1.tsv");
-  my @g;
-  my $g=[];
+  say for @tsv;
+  my($g,@g)=[];
   push(@g,$g);
-  for(sort @tsv){
-    my($state)="";
-    my(@group);
-    my($of)=$_;
+  for my $if(sort @tsv){
+    @_=TsvWord->load_file($if);
+    my($of)=$if;
     for($of){
       s{tsv}{html}g;
       $_=path($_);
     };
-    @_=tsv_parse_file($_);
-    eex shift;
-    next unless @_;
-    @_=TsvWord->from(@_);
-    @_=sort { $a->cy <=> $b->cy } @_;
-    my($i)=0;
-    @_=grep { $_->level == 5 } @_;
-    while(@_){
-      ++$i;
-      if(exists $trig{$_[0]->text}){
-        $state=$_[0]->text;
-        push(@g,$g=[]);
-        if($_[0]->text eq "POLLOCK"){
-          push(@$g,[shift(@_)]);
-          push(@g,$g=[]);
-        };
-      };
-      my(@tmp)=@{find_group(\@_)};
-      @tmp = sort { $a->cx <=> $b->cx } @tmp;
-      @tmp = grep { defined } @tmp;
-      push(@$g,\@tmp);
-    };
+#        eex($_) for @_;
+#        my($state)="";
+#        my(@group);
+#        next unless @_;
+#        say ref($_[0]);
+#        @_=TsvWord->from(@_);
+#        @_=sort { $a->cy <=> $b->cy } @_;
+#        my($i)=0;
+#        @_=grep { $_->level == 5 } @_;
+#        while(@_){
+#          ++$i;
+#          if(exists $trig{$_[0]->text}){
+#            $state=$_[0]->text;
+#            push(@g,$g=[]);
+#            if($_[0]->text eq "POLLOCK"){
+#              push(@$g,[shift(@_)]);
+#              push(@g,$g=[]);
+#            };
+#          };
+#          my(@tmp)=@{find_group(\@_)};
+#          @tmp = sort { $a->cx <=> $b->cx } @tmp;
+#          @tmp = grep { defined } @tmp;
+#          push(@$g,\@tmp);
+#        };
   };
   for(@g) {
     for(@{$_}){
