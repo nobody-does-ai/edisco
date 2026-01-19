@@ -94,12 +94,7 @@ BEGIN {
   *t=\&y1; *top=\&y1;
   *b=\&y2; *bottom=\&y2;
 };
-our(%del);
 BEGIN {
-  %del=(
-    dx=>[qw( x1 x2 )],
-    dy=>[qw( y1 y2 )],
-  );
   $key{$_}="dx" for qw( w width dx );
   $key{$_}="dy" for qw( h height dy );
   *w=\&dx; *width=\&dx;
@@ -153,11 +148,20 @@ sub clone {
 sub rect {
   return shift;
 };
+sub cy {
+  die "usage: \$r->cx" unless @_==1;
+  return int(sum(map { $_[0]->$_ } qw(y1 y2))/2); 
+};
+sub cx {
+  die "usage: \$r->cx" unless @_==1;
+  return int(sum(map { $_[0]->$_ } qw(x1 x2))/2); 
+};
 use overload (
   q{""}    => 'tostring',
 );
 sub tostring {
   local(@_)=@_;
+  die "@_";
   my($self)=shift;
   for(@_){
     $_=[$_,$self->$_]

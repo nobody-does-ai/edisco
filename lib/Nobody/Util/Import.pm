@@ -11,7 +11,6 @@ BEGIN {
   use vars ( 
     qw( @carp %PACK @EXPORT  @EXPORT_OK  @ISA %seen)
   );
-  @carp=qw( carp confess croak cluck );
   our(%PACK, @subs);
   @subs=qw(
   QX            WNOHANG      avg       class     
@@ -61,6 +60,8 @@ BEGIN {
   };
   use subs @subs;
   push(@EXPORT,@subs);
+  our(@carp);
+  @carp=qw( carp confess croak cluck );
   $PACK{'Carp'}=[@carp];
   $PACK{'Env'}=[qw( $HOME $PWD @PATH )];
   $PACK{'Fcntl'}=[qw(:seek :mode)];

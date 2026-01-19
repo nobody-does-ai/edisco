@@ -1,5 +1,6 @@
 package Nobody::PP;
-use Exporter qw(import);
+require Exporter;
+*import = \&Exporter::import;
 
 use strict;
 use common::sense;
@@ -35,13 +36,13 @@ sub loc {
   do {
     ($pkg,$file,$line)=caller($idx++);
   } while($pkg eq 'Nobody::PP');
-  return join(':',$file,$line,"@_");
+  join(':',$file,$line,"@_");
 };
 sub ppx {
   return loc(pp(@_));
 }
 sub ddx {
-  say STDOUT ppx(@_);
+  ay STDOUT ppx(@_);
 }
 sub eex {
   say STDERR ppx(@_);
@@ -302,8 +303,7 @@ BEGIN {
     my $rval = $ref ? $_[0] : \$_[0];
     shift;
     my($name, $idx, $dont_remember, $pclass, $pidx) = @_;
-    say STDERR join(":",__FILE__,__LINE__,@_) if $dont_remember;
-    die if $dont_remember;
+
     my($class, $type, $id);
     my $strval = overload::StrVal($rval);
     # Parse $strval without using regexps, in order not to clobber $1, $2,...
@@ -349,7 +349,7 @@ BEGIN {
       $pclass = $class;
       $pidx = @$idx;
     }
-
+    {
     if (defined $out) {
       # keep it
     }
@@ -534,15 +534,21 @@ BEGIN {
     elsif ($type eq "CODE") {
       $out = deparse( $rval );
     }
+    elsif ($type eq "LVALUE" ) {
+      my($rval)=$rval;
+      $out=_pp($rval);
+    }
     elsif ($type eq "VSTRING") {
       $out = sprintf +($ref ? '\v%vd' : 'v%vd'), $$rval;
     }
-    elsif ($type eq "LVALUE") {
-      $out = $$rval;
-    } else {
+
+    #===
+    else {
       warn "Can't handle $type data";
       $out = "'#$type#'";
     }
+    #===
+  }
 
     if ($class && $ref) {
       $out = "bless($out, " . quote($class) . ")";
@@ -556,4 +562,9 @@ BEGIN {
     return $out;
   }
 }
+unless(caller) {
+  ddx( substr("deparse",2,5) );
+#      deparse( \&ddx );
+#      ddx( \&ddx );
+};
 1;

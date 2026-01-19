@@ -9,7 +9,6 @@ use warnings;
 no warnings 'experimental::builtin';
 use common::sense;
 use Path::Tiny;
-use List::Util;
 sub open_fds(;$);
 BEGIN {
   sub open_fds(;$) {

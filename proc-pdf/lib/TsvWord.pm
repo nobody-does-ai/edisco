@@ -31,6 +31,12 @@ sub level {
   my($self)=shift;
   return $self->{level};
 };
+sub cx {
+  shift->rect->cx(@_);
+};
+sub cy {
+  shift->rect->cy(@_);
+};
 sub left {
   shift->rect->left(@_);
 }

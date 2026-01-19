@@ -13,8 +13,12 @@ BEGIN {
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
   tsv_to_tsv fname_parse
-  paths trace
+  paths trace find_group
+  group_text
   );
+};
+sub group_text {
+  return join(" ", map { $_->text } @_);
 };
 sub tsv_to_tsv {
   trace(@_);
@@ -83,7 +87,6 @@ sub tsv_format {
     $_=join("\t", grep { defined } map { $hash->{$_} } @col);
   };
   unshift(@_,join("\t",@col));
-  eex(@_[0,1,2]);
   @_;
 };
 sub tsv_parse {
@@ -190,29 +193,46 @@ sub pdf_to_pgs {
   };
   return @_;
 }
-sub next_set {
-  my(@word)=@_;
-  my($top)=$word[0]->top;
-  my($bot)=$word[0]->bottom;
-  eex( { top=>$top, bot=>$bot } );
-  while($word[0]->top<$bot){
-    $bot=max($bot,shift(@word)->bottom);
-  };
-};
 sub tsv_combine {
   local(@_)=@_;
-  my($off)=shift;
-  for(@_) {
-    $_->{top}+=$off;
+  my(%off)=%{+shift};
+  my(%max);
+  if(@_) {
+    %max=map { $_, 0 } qw( block_num page_num );
   };
-  $off=($_[0]->{top}+$_[0]->{height});
-  $off;
+  for my $word(@_) {
+    $word->{top}+=$off{top};
+    $word->{page_num}+=$off{page_num};
+    $word->{block_num}+=$off{block_num};
+    for(keys %max){
+      $max{$_}=max($max{$_},$word->{$_}) if exists $word->{$_};
+    };
+  };
+  $max{top}=$off{top}+$_[0]->{height};
+  %off=%max;
+  \%off;
+};
+sub find_group {
+  local(@_)=@_;
+  local(*_)=shift;
+  my(@word)=shift;
+  my($top,$bot)=($word[0]->top,$word[0]->bottom);
+  ($top,$bot)=(min($top,$bot),max($top,$bot));
+  for (my $i=0;$i<@_;$i++) {
+    my($word)=$_[$i];
+    my($a)=int(sum($word->top,$word->bottom)/2);
+    next unless (($a>$top && $a<$bot));
+    push(@word,splice(@_,$i,1,undef));
+  };
+  @_=grep { defined } @_;
+  @word=sort { $a->left <=> $b->left } @word;
+  \@word;
 };
 sub tsv_combine_files {
   local(@_)=@_;
   my($of,@if)=@_;
   $of=path($of);
-  my($off)=0;
+  my($off)={};
   my($cols);
   my(@tsv);
   for(sort @if){
@@ -223,20 +243,6 @@ sub tsv_combine_files {
   path($of)->touchpath->spew(join("\n",tsv_format($cols,@tsv)));
   tsv_parse_file($of);
   return $of;
-};
-sub tsv_partition {
-  trace(@_);
-  my(@word)=@_;
-  return () unless @word;
-  my(@part);
-  @word=sort {
-    $a->top <=> $b->top
-      or
-    $a->bottom <=> $b->bottom
-      or
-    refaddr($a) <=> refaddr($b)
-  } @word;
-  my(@set)=next_set(@word);;
 };
 sub run {
   if(my $pid=fork) {

@@ -45,8 +45,10 @@ sub main {
     local(@_)=pdf_to_pgs($pdf);
     @_=pdf_to_png(@_);
     @_=png_to_tsv(@_);
+    my(@goners)=@_;
     @_=tsv_combine_files($tsv,@_);
-    push(@tsv,[@_]);
+#        $_->remove for @goners;
+    push(@tsv,@_);
   };
-  eex(\@tsv);
+  say for @tsv;
 }

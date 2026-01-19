@@ -1,5 +1,6 @@
 package GDUtil;
 use Nobody::Util;
+use GD::Image;
 our(@EXPORT)=qw( slice_y stack_slices );
 use base 'Exporter';
 
