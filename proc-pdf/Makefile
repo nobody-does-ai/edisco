@@ -1,3 +1,4 @@
 all:
-	./bin/ppdf-tsv
-	./bin/tsv-to-html
+	./bin/tsv-lines
+#    	./bin/ppdf-tsv
+#    	./bin/tsv-to-html

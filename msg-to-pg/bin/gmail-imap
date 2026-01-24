@@ -31,7 +31,7 @@ my $dir = $base_path->child($config->{maildir_root});
 $dir->child($_)->mkdir for qw(cur new tmp);
 
 sub log_msg {
-    ddx(sprintf("[%s] %s\n", serdate, "@_"));
+  ddx(sprintf("[%s] %s\n", serdate, "@_"));
 }
 
 sub json_load {
@@ -78,19 +78,24 @@ sub parse_headers_from_raw {
 }
 
 sub rebuild_md5_manifest {
-    my ($cur_dir) = @_;
-    my @files = sort grep { $_ !~ m{^\.\.?$} && $_ !~ m{^\.[^/]+$} } map { $_->basename } $cur_dir->children;
-    my $out = $cur_dir->child('.md5');
-
-    my @lines;
-    for my $bn (@files) {
-        my $p = $cur_dir->child($bn);
-        next unless -f $p;
-        my $md5 = md5_hex($p->slurp_raw);
-        push @lines, "$md5  $bn";
-    }
-    $out->spew(join("\n", @lines) . (@lines ? "\n" : ""));
-    return scalar(@lines);
+    my (@cur_dir) = @_;
+    my @files;
+    my($count)=0;
+    while(@cur_dir) {
+      my(@lines);
+      my($cur_dir)=shift(@cur_dir);
+      for my $p( $cur_dir->children ) {
+        if( -d ) {
+          push(@cur_dir,$p);
+        } elsif ( -f ) {
+          my $md5 = md5_hex($p->slurp_raw);
+          push @lines, "$md5  ".($p->basename);
+        }
+      }
+      $cur_dir->child('.md5')->spew(join("\n", splice(@lines),""));
+      $count+=scalar(@lines);
+    };
+    $count;
 }
 
 # Load credentials via pass

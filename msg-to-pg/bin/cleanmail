@@ -1,0 +1,53 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+
+my($dir)=path("smsdir");
+@ARGV=map { $dir->child($_) } qw(new cur);
+@ARGV=sort map { glob("$_/*") } @ARGV;
+open(STDERR,">&STDOUT");
+my(%con);
+for(@ARGV) {
+  $_=path($_)->slurp;
+  my($head,$body,$x)=split(m{\n\n},$_,2);
+  $_="$_\n" for $head,$body;
+  $_=[split m{\n}sm] for $head,$body;
+  my($party);
+  {
+    local(*_)=$head;
+    @_=grep { !m{^(Message-ID|X-|Subject)}i } @_;
+    @_=grep { !m{^(From|To):\s*"me\@sms} } @_;
+    {
+      local(@_)=@_;
+      local($_)=map { split } grep {s{^(From|To):}{}} @_;
+      $party=$_;
+    };
+  };
+  {
+    local(*_)=$body;
+    @_=grep { !m{^\[Attachment} } @_;
+  };
+  for( $head, $body ) {
+    s{\s*$}{\n} for @$_;
+    $_=join("",@$_);
+  };
+  push(@{$con{$party}},[split(m{\n}sm,$head,$body)]);
+#      next;
+#      {
+#        local(@_)=split m{\n}sm;
+#        $_=join("\n",@_,"","");
+#      }
+#      unshift(@_,m{\n}sm);
+#      eex( @_ );
+};
+eex(\%con);
+#    say for @ARGV;
+
+#    find smsdir/{new,cur} -type f | sort | while read i; do cat $I; echo; echo; done | grep -v ^X- | grep -v Message-ID | grep -v me@sms | grep -v '^\[Attach' | perl -e 'use common::sense; chomp(@_=<STDIN>); s{\r}{}g for @_; $_=join("\n",@_); for(split m{\n\n}sm) { say pp($_); }; use Nobody::Util; '
