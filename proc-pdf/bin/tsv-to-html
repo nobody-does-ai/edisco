@@ -45,21 +45,27 @@ sub main {
   my($g,@g)=[];
   push(@g,$g);
   for my $if(sort @tsv){
-    @_=TsvWord->load_file($if);
     my($of)=$if;
     for($of){
       s{tsv}{html}g;
       $_=path($_);
     };
-#        eex($_) for @_;
+    @_=TsvWord->load_file($if);
+    say scalar(@_);
+    @_=grep { $_->level == 5 } @_;
+    my(@gs,@g);
+    push(@gs,[shift]);
+    push(@gs,[shift,shift]);
+    @_=sort { $a->cy <=> $b->cy  } @_;
+    while(@_){
+      push(@gs,[group_find(\@_)]);
+    };
+    eex(\@gs);
 #        my($state)="";
 #        my(@group);
 #        next unless @_;
 #        say ref($_[0]);
-#        @_=TsvWord->from(@_);
-#        @_=sort { $a->cy <=> $b->cy } @_;
 #        my($i)=0;
-#        @_=grep { $_->level == 5 } @_;
 #        while(@_){
 #          ++$i;
 #          if(exists $trig{$_[0]->text}){
@@ -76,12 +82,12 @@ sub main {
 #          push(@$g,\@tmp);
 #        };
   };
-  for(@g) {
-    for(@{$_}){
-      if(grep { $trig{$_->text} } @$_) {
-        say group_text(@$_);
-      };
-    };
-  };
+#      for(@g) {
+#        for(@{$_}){
+#          if(grep { $trig{$_->text} } @$_) {
+#            say group_text(@$_);
+#          };
+#        };
+#      };
 }
 main(@ARGV);

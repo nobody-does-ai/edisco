@@ -8,13 +8,15 @@ BEGIN {
   use FindBin qw($Script $Bin);
   use lib "$Bin/../lib";
 };
+use TieHandleDebug;
+tie *STDOUT , 'TieHandleDebug';
+tie *STDERR , 'TieHandleDebug';
 use Carp::Always;
 use vars (@var);
 use Carp qw( cluck confess croak carp );
 use List::Util qw();
 use List::Util @List::Util::EXPORT_OK;
 use Nobody::PP;
-use TsvFile;
 use TsvRect;
 use TsvWord;
 use TsvUtil;
@@ -37,15 +39,18 @@ exit(0);
 sub err {
   say STDERR "@_";
 };
+my(%del);
 sub main {
   @_ = map { path($_) } @_;
   local(@_)=@_;
   my(@tsv);
   for my $pdf(@_) {
     my($tsv)=path(grep { s{(pdf|src)}{tsv}g } $pdf->stringify);
-    local(@_)=pdf_to_pgs($pdf);
+    local(@_);
+    @_=pdf_to_pgs($pdf);
     @_=pdf_to_png(@_);
     @_=png_to_tsv(@_);
+    eex($tsv);
     @_=tsv_to_one($tsv,@_);
   };
 } 

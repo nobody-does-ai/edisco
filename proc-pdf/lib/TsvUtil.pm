@@ -16,14 +16,14 @@ pdf_to_pgs
 pdf_to_png
 png_to_tsv
 tsv_combine_files
-tsv_parse
-tsv_parse_file
-tsv_partition
 tsv_to_one
   );
 };
+sub fuckoff {
+  die @_;
+}
 sub group_text {
-  return join(" ", map { $_->text } @_);
+  return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
 };
 our(@cols);
 BEGIN { 
@@ -47,6 +47,7 @@ sub gather {
 sub tsv_format {
   local(@_)=@_;
   die "no cols" unless @cols>10;
+  unshift(@_,join("\t",@cols));
   while(grep { ref } @_) {
     for(my $i=0;$i<@_;$i++) {
       if(ref($_[$i]) eq 'ARRAY') {
@@ -78,7 +79,7 @@ sub tsv_to_one {
   local(@_)=@_;
   my($otsv,@itsv)=splice@_;
   my(@tsv);
-  my(%max)=qw( block_num 0 page_num 0 height 0 );
+  my(%max)=qw( block_num 0 page_num 0 top 0 );
   my(%off)=%max;
   say scalar(@itsv), " files to parse";
   for(@itsv) {
@@ -90,6 +91,7 @@ sub tsv_to_one {
       };
     };
     push(@tsv,[@_]);
+    eex $tsv[0];
     %off=%max;
   };
   $otsv->remove;
@@ -159,9 +161,8 @@ sub pdf_to_pgs {
     } else {
       err "xform $if to $of";
       $of->parent->mkdir;
-      my (@cmd)=( qw(qpdf), $if, qw( --pages .), 1+$pg, '--', $of);
-      system(@cmd);
-      die "(@cmd) failed" if $?;
+      my (@cmd)=( qw(qpdf), '$if', qw( --pages .), 1+$pg, '--', '-');
+      run($if,$of,@cmd);
     };
   };
   return @_;
@@ -185,21 +186,15 @@ sub tsv_combine {
   %off=%max;
   \%off;
 };
-sub find_group {
+sub group_find {
   local(@_)=@_;
   local(*_)=shift;
-  my(@word)=shift;
-  my($top,$bot)=($word[0]->top,$word[0]->bottom);
-  ($top,$bot)=(min($top,$bot),max($top,$bot));
-  for (my $i=0;$i<@_;$i++) {
-    my($word)=$_[$i];
-    my($a)=int(sum($word->top,$word->bottom)/2);
-    next unless (($a>$top && $a<$bot));
-    push(@word,splice(@_,$i,1,undef));
+  my($bot,@word)=map { $_->bottom, $_ } shift;
+  while(@_ and ($_[0]->cy)<$bot) {
+    push(@word,shift);
   };
-  @_=grep { defined } @_;
-  @word=sort { $a->left <=> $b->left } @word;
-  \@word;
+  @word = sort { $a->left <=> $b->left } @word;
+  @word;
 };
 sub run {
   if(my $pid=fork) {
@@ -212,15 +207,20 @@ sub run {
   my($if)=shift;
   my($of)=shift;
   my($tf)=path($of.".tmp");
-  open(STDOUT,">",$tf);
   local(@_)=@_;
+  my(%open)=qw( $if 1 $of 1 );
   for(@_) {
-    $_=eval $_ if m{^\$};
+    if(m{^\$[io]f$}) {
+      $_=eval $_;
+      fuckoff "$@" if "$@";
+    };
   };
-  system(@_);
+  open(STDIN,"<","$if");
+  open(STDOUT,">",$tf);
+  system("@_");
   if($?) {
     $tf->remove;
-    die "($if,$of,@_)";
+    fuckoff "($if,$of,@_)";
   };
   $tf->move($of);
   exit(0);

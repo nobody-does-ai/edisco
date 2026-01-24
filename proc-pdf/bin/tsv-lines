@@ -5,16 +5,19 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
 $|++;
 use lib "lib";
 use common::sense;
+use Tsv;
 use autodie;
 use Nobody::Util;
 use TsvUtil;
 use Carp qw( croak confess carp cluck );
 use Carp::Always;
 use Tsv;
-use vars qw($coder);
-*coder=\$Tsv::coder;
+use TsvLine;
+BEGIN {
+  use TsvWord;
+};
 our(@VERSION) = qw( 0 1 0 );
-my(%trig) = map { $_, 1 } qw( TRANSACTIONS INVESTMENTS );
+my(%trig) = map { $_, 1 } qw( TRANSACTIONS INVESTMENTS INSURED Page POLLOCK );
 sub proc_file($);
 sub main {
   local(@_)=@_;
@@ -33,23 +36,33 @@ sub proc_file($) {
     $_=path($_);
   };
   @_=TsvWord->load_file($if);
-  eex(\@_);
+  @_=grep { defined } @_;
+  next unless @_;
   @_=grep { $_->level == 5 } @_;
   @_=sort { $a->cy <=> $b->cy } @_;
-  eex(@_);
+  my(@all,@inv,@trn); 
+  my(%trig)=%trig;
+  for(values %trig){
+    $_=\@all;
+  };
+  $trig{TRANSACTIONS}=\@trn;
+  $trig{INVESTMENTS}=\@inv;
+  my($part)=\@all;
+  @_=TsvLine->from(@_);
   while(@_) {
-    while(!$trig{$_[0]->text}){
-      shift;
-    };
-    if($_[0]->text eq 'INVESTMENTS') {
-      shift;
-      while(@_ and !$trig{$_->text}){
-        say($_[0]);
-      };
-    } else {
-      die "not implemented!";
-    };
+    my($text)=$_[0]->word->text;
+    if($trig{$text}) {
+      $part=$trig{$text};
+    }
+    push(@$part,shift);
   }
+  for(@inv) {
+    say $_->text;
+  };
+  my($rel)=Tsv->new({ inv=>\@inv, trn=>\@trn, all=>\@all });
+  use Data::Dumper;
+  local($Data::Dumper::Terse=1);
+  path("dat/dat.pl")->touchpath->spew(Dumper($rel));
 };
 #      my @g;
 #      my $g=[];

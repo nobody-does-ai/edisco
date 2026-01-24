@@ -1,20 +1,18 @@
-#!/usr/bin/perl
-BEGIN { open(STDOUT,">&STDERR"); };
-# vim: ts=2 sw=2 ft=perl
-eval 'exec perl -x -wS $0 ${1+"$@"}'
-  if 0;
-$|++;
 package TsvWord;
 use lib "lib";
+# vim: ts=2 sw=2 ft=perl
 use common::sense;
-use Nobody::Util;
-use Carp::Always;
-use TsvUtil;
-use autodie;
-use Nobody::PP;
-our(@VERSION) = qw( 0 1 0 );
+{
+  package U;
+  use Nobody::Util;
+  use Carp::Always;
+  use TsvUtil;
+  use autodie;
+  use Nobody::PP;
+  our(@VERSION) = qw( 0 1 0 );
+  our($DEBUG);
+};
 our(@ISA)=qw(Tsv);
-our($DEBUG);
 our(@cols);
 BEGIN {
   *DEBUG=\$Tsv::DEBUG;
@@ -57,7 +55,7 @@ sub bottom {
 }
 sub new {
   local(@_)=@_;
-  my($class)=class(shift);
+  my($class)=U::class(shift);
   my(%data)=map { %$_ } shift;
   my(%rect);
   for(qw(left top width height)){
@@ -70,29 +68,23 @@ sub new {
   $self->{rect}=TsvRect->new( %rect );
   bless($self,$class);
 };
+sub vsort {
+  local(@_)=@_;
+  @_=map { [ $_->cy, $_->cx, $_ ] } @_;
+  @_=sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1]  } @_;
+  map { $_->[2] } @_;
+};
 sub from {
   use Carp qw( croak cluck carp confess );
   local(@_)=@_;
-  my($class)=class(shift);
+  my($class)=U::class(shift);
   for(@_) {
-    next if(safe_isa($_,'TsvWord'));
+    next if(U::safe_isa($_,'TsvWord'));
     die "???", pp($_) unless ref($_) eq "HASH";
     $_=$class->new($_);
   };
   return @_;
 };
-#    sub tsv_parse {
-#      local(@_)=@_;
-#      chomp(@_);
-#      $_=[split m{[\t\n]}, @_];
-#      my @col=map{@$_}shift(@_);
-#      for(@_){
-#        my(%tsv);
-#        @tsv{@col}=@$_;
-#        $_=\%tsv;
-#      };
-#      (\@col,@_);
-#    };
 sub hash {
   local(@_)=@_;
   if(@cols) {
@@ -112,7 +104,7 @@ sub load_file {
   $self->from($self->parse_file(@_));
 };
 sub parse_file {
-  die "usage: TsvWord->load_file(CLASS->path(\"name\"))" unless (
+  die "usage: TsvWord->parse_file(CLASS->path(\"name\"))" unless (
     @_==2
       and
     $_[0] eq __PACKAGE__

@@ -1,18 +1,22 @@
 package TsvRect;
 use common::sense;
 use lib "lib";
+use Tsv;
+our(@ISA)=qw(TSV);
 BEGIN {
   use FindBin qw($Script $Bin);
   use lib "$Bin/../lib";
 };
-use Tsv;
-our(%key);
-use Exporter qw(import);
 use common::sense;
-use Carp::Always;
-use Nobody::PP qw(loc);
-use Nobody::Util;
-use Carp qw(carp cluck croak confess);
+{
+  package U;
+  use Carp::Always;
+  use Nobody::PP qw(loc);
+  use Nobody::Util;
+  use Carp qw(carp cluck croak confess);
+};
+use Exporter qw(import);
+our(%key);
 our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
@@ -55,29 +59,33 @@ sub be_defined {
 sub x1 {
   my($self)=shift;
   die unless $self->isa("TsvRect");
+  die "not a setter" if @_;
   $self->{x1}=shift if @_;
-   $self->be_defined( $self->{x1} );
+  $self->be_defined( $self->{x1} );
 };
 
- sub x2 {
-   my($self)=shift;
-   $self->{x2}=shift if @_;
+sub x2 {
+  my($self)=shift;
+  die "not a setter" if @_;
+  $self->{x2}=shift if @_;
   $self->{x2};
-   $self->be_defined( $self->{x2} );
- };
+  $self->be_defined( $self->{x2} );
+};
 
- sub y1 {
-   my($self)=shift;
-   $self->{y1}=shift if @_;
+sub y1 {
+  my($self)=shift;
+  die "not a setter" if @_;
+  $self->{y1}=shift if @_;
   $self->{y1};
-   $self->be_defined( $self->{y1} );
- };
+  $self->be_defined( $self->{y1} );
+};
 
- sub y2 {
-   my($self)=shift;
-   $self->{y2}=shift if @_;
-   $self->be_defined( $self->{y2} );
- };
+sub y2 {
+  my($self)=shift;
+  die "not a setter" if @_;
+  $self->{y2}=shift if @_;
+  $self->be_defined( $self->{y2} );
+};
 
 BEGIN {
   @prim = ( "x1 l left", "x2 r right", "y1 t top", "y2 b bottom" );
@@ -101,9 +109,8 @@ BEGIN {
   *h=\&dy; *height=\&dy;
 };
 sub new {
-  local($DEBUG)=2;
   local(@_)=@_;
-  my($class)=class(shift);
+  my($class)=U::class(shift);
   @_ = map { (ref eq 'ARRAY')?(@$_):($_) } @_;
   @_ = map { (ref eq 'HASH') ? %$_ : $_ } @_;
   @_ = map { $key{$_} or $_ } @_;
@@ -122,6 +129,7 @@ sub new {
   };
   my($self)={%tmp};
   bless($self,$class);
+  $self;
 };
 sub nsort {
   return sort { $a <=> $b } @_;
@@ -143,36 +151,40 @@ sub union {
     });
 };
 sub clone {
-  return class($_[0])->new(%{$_[0]});
+  return U::class($_[0])->new(%{$_[0]});
 };
 sub rect {
   return shift;
 };
 sub cy {
-  die "usage: \$r->cx" unless @_==1;
-  return int(sum(map { $_[0]->$_ } qw(y1 y2))/2); 
+  die "usage: \$r->cy" unless @_==1;
+  return int(U::sum(map { $_[0]->$_ } qw(y1 y2))/2); 
 };
 sub cx {
+  local(@_)=@_;
   die "usage: \$r->cx" unless @_==1;
-  return int(sum(map { $_[0]->$_ } qw(x1 x2))/2); 
+  my($self)=shift;
+  (U::sum(map { $self->$_ } qw(x1 x2))/2); 
 };
 use overload (
   q{""}    => 'tostring',
 );
 sub tostring {
   local(@_)=@_;
-  die "@_";
   my($self)=shift;
+  local(@_)=qw(x1 cx x2 y1 cy y2);
   for(@_){
     $_=[$_,$self->$_]
   };
-  $_="";
-  while(!ref($_[0])) {
-    for(@$_) {
-      push(@_,$_,$self->{$_});
+  for(@_){
+    if($_->[0] =~ m{c}) {
+      $_=sprintf("%3s => %6.1f", @$_);
+    } else {
+      $_=sprintf("%3s => %6d", @$_);
     };
-    push(@_,{shift,undef, shift,undef});
   };
+  my($txt)=join(", ",@_);
+  join(" ","{",$txt,"}");
 };
 sub horz {
   my($self)=shift;
