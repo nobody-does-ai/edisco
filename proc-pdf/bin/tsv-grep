@@ -3,7 +3,6 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
-use lib "lib";
 use common::sense;
 use GDUtil;
 use TsvSet;

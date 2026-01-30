@@ -4,10 +4,6 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
 use Nobody::Util;
-BEGIN {
-  use FindBin qw($Script $Bin);
-  use lib "$Bin/../lib";
-};
 use TieHandleDebug;
 tie *STDOUT , 'TieHandleDebug';
 tie *STDERR , 'TieHandleDebug';

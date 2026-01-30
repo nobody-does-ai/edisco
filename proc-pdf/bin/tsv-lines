@@ -3,134 +3,66 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
-use lib "lib";
 use common::sense;
 use Tsv;
 use autodie;
 use Nobody::Util;
 use TsvUtil;
+use TsvWord;
+use TsvText;
 use Carp qw( croak confess carp cluck );
 use Carp::Always;
 use Tsv;
 use TsvLine;
-BEGIN {
-  use TsvWord;
-};
 our(@VERSION) = qw( 0 1 0 );
-my(%trig) = map { $_, 1 } qw( TRANSACTIONS INVESTMENTS INSURED Page POLLOCK );
 sub proc_file($);
+my(%data);
 sub main {
   local(@_)=@_;
-  @_=map { path($_) } sort glob("tsv/2024-Q1.tsv");
+  @_=map { path($_) } sort glob("tsv/202?-Q?.tsv") unless @_;
   for(@_) {
-    proc_file($_);
+    local(@_)=map { split m{([/.-])} } $_->basename(".tsv");
+    my($y,undef,$q)=@_;
+    eex(@_);
+    $data{$y}{$q}=proc_file($_);
   };
-};
-sub proc_file($) {
-  die "usage: proc_file(\$if,\$of)" unless @_==1;
-  die "paths required" unless @_==(grep { safe_isa($_,'Path::Tiny') } @_);
-  my($if)=shift;
-  my($of)=$_;
-  for($of){
-    s{tsv}{html}g;
-    $_=path($_);
-  };
-  @_=TsvWord->load_file($if);
-  @_=grep { defined } @_;
-  next unless @_;
-  @_=grep { $_->level == 5 } @_;
-  @_=sort { $a->cy <=> $b->cy } @_;
-  my(@all,@inv,@trn); 
-  my(%trig)=%trig;
-  for(values %trig){
-    $_=\@all;
-  };
-  $trig{TRANSACTIONS}=\@trn;
-  $trig{INVESTMENTS}=\@inv;
-  my($part)=\@all;
-  @_=TsvLine->from(@_);
-  while(@_) {
-    my($text)=$_[0]->word->text;
-    if($trig{$text}) {
-      $part=$trig{$text};
-    }
-    push(@$part,shift);
-  }
-  for(@inv) {
-    say $_->text;
-  };
-  my($rel)=Tsv->new({ inv=>\@inv, trn=>\@trn, all=>\@all });
   use Data::Dumper;
-  local($Data::Dumper::Terse=1);
-  path("dat/dat.pl")->touchpath->spew(Dumper($rel));
+  $Data::Dumper::Terse=1;
+  $Data::Dumper::Sortkeys=1;
+  path("dat/all.dat.pl")->touchpath->spew(Dumper(\%data));
 };
-#      my @g;
-#      my $g=[];
-#      push(@g,$g);
-#      my(@tsv);
-#      for(sort @tsv){
-#        for(@_) {
-#          eex ref($_);
-#        };
-#        exit(0);
-#        shift;
-#        next unless @_;
-#        @_=TsvWord->from(@_);
-#        @_=grep { $_->level == 5 } @_;
-#        @_=sort { $a->cy <=> $b->cy } @_;
-#        my(@i);
-#        for(@_) {
-#          say ref;
-#        };
-#        while(@_) {
-#          while(!$trig{$_[0]->text}){
-#            shift;
-#          };
-#          if($_[0]->text eq 'INVESTMENTS') {
-#            shift;
-#            while(@_ and !$trig{$_->text}){
-#              say($_[0]);
-#            };
-#          } else {
-#            die "not implemented!";
-#          };
-#        }
-#        exit(0);
-#        eex($_[0]);
-#        eex(\@_);
-#        exit(0);
-#        my(@l);
-#        while(@_){
-#          my($l)=find_group(\@_);
-#          @{$l}=sort { $a->cx <=> $b->cx } @{$l};
-#          push(@l,$l);
-#          say scalar(@l);
-#        };
-#        my(@g);
-#        while(@l) {
-#          if($l[0]->[0]->text eq "Page") {
-#          } elsif( grep { $trig{$_->text} } @{$l[0]} ) {
-#            push(@g,[shift @l]);
-#          } else {
-#            push(@{$g[$#g]},shift @l);
-#          };
-#        };
-#    
-#      }
-#        while(@_){
-#          ++$i;
-#          my(@tmp)=@{find_group(\@_)};
-#          @tmp = sort { $a->cx <=> $b->cx } @tmp;
-#          @tmp = grep { defined } @tmp;
-#          push(@$g,\@tmp);
-#        };
-#      };
-#      for(@g) {
-#        for(@{$_}){
-#          if(grep { $trig{$_->text} } @$_) {
-#            say group_text(@$_);
-#          };
-#        };
-#      };
-#    }
+{
+  sub proc_file($) {
+    die "usage: proc_file(\$if)" unless @_==1;
+    die "paths required" unless @_==(grep { safe_isa($_,'Path::Tiny') } @_);
+    my(@all,@inv,@trn); 
+    my($part)=\@all;
+    my(%trig) = map { $_, $part } qw(
+    TRANSACTIONS INVESTMENTS INSURED Page POLLOCK
+    );
+    $_=$part for(values %trig);
+    $trig{TRANSACTIONS}=\@trn;
+    $trig{INVESTMENTS}=\@inv;
+    my($if)=shift;
+    my($of)=$_;
+    for($of){
+      s{tsv}{html}g;
+      $_=path($_);
+    };
+    @_=TsvWord->load_file($if);
+    @_=TsvLine->from(@_);
+    while(@_) {
+      my($text)=$_[0]->word(0)->text;
+      if($trig{$text}) {
+        if($part ne $trig{$text}) {
+          $part=$trig{$text};
+          push(@$part,$_[0]);
+        };
+      }
+      push(@$part,shift);
+    }
+    my($rel)={ inv=>\@inv, trn=>\@trn, all=>\@all };
+    $rel;
+  };
+}
 main(@ARGV);

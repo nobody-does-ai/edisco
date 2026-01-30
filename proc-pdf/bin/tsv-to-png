@@ -1,11 +1,11 @@
 #!/usr/bin/perl
 use common::sense;
 use autodie;
-use lib 'lib';
-use TsvFile;
 use Image::Magick;
-use Nobody::Util qw(max);
-
+use Nobody::Util;
+use TsvWord;
+use TsvLine;
+require "$ENV{HOME}/stow/ex-code/gather.pl";
 # Usage: ./tsv-render input.tsv output.png
 my ($in_file, $out_file) = @ARGV;
 $in_file="tsv/2024-Q1.tsv" unless defined $in_file;
@@ -16,9 +16,9 @@ unless(defined($out_file)) {
     $_="$_.png";
   };
 };
-eex( $in_file, $out_file );
-my $tsv = [ TsvWord->load_file($in_file) ];
+my $tsv = [ TsvLine->load_file($in_file) ];
 my @rows = @$tsv;
+eex(@rows);
 
 # Optimized: Try to get dimensions from Page object (Level 1)
 my ($page) = (grep { $_->level == 1 } @rows);

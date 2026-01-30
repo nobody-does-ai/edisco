@@ -3,91 +3,63 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
-use lib "lib";
-use common::sense;
 use autodie;
-use Nobody::Util;
-use TsvUtil;
-use TsvWord;
+use common::sense;
 use Carp qw( croak confess carp cluck );
 use Carp::Always;
-use Tsv;
-use vars qw($coder);
-*coder=\$Tsv::coder;
-use feature qw(signatures);
+use Nobody::Util;
+use Tsv; use TsvUtil; use TsvWord;
+use TsvLine;
 our(@VERSION) = qw( 0 1 0 );
-our(%page);
-my(%trig) = map { $_, 1 } qw( TRANSACTIONS INVESTMENTS Page POLLOCK );
-sub space_text {
-  my(@res)=shift;
-  for(@_){
-    my($last)=$res[$#res];
-#        if($_->left < $last->right){
-#          eex($last,$_);
-#        };
-    my($space)= $_->left-$last->right;
-    if($space>10) {
-      $space=join($_->left,"(",")");
-      push(@res,$space);
+our(%data);
+(*data)=require(path("dat/all.dat.pl")->absolute->stringify);
+sub row {
+  local(@_)=@_;
+  my($extra)=(@_>1?"":'colspan="4"');
+  $_="  $_" for @_;
+  @_=map { ("<td $extra>", $_, "</td>") } @_;
+  $_="  $_" for @_;
+  unshift(@_,"<tr>");
+  push(@_,"</tr>");
+  @_;
+};
+sub formdate {
+  local(*_)=$_[0];
+  my($m,$d,$y)=m{(\d\d)/(\d\d)/(\d\d\d\d)};
+  return undef unless defined $y;
+  $_=join("-",$y,$m,$d); 
+  return 1;
+};
+sub trn {
+  my($trn)=shift;
+  local(*_)=$trn->word;
+  local($_)=$_[0];
+  @_=map { $_->text } @_;
+  for($_[0]) {
+    local($")=" ";
+    if($_ eq "Date"){
+      return row("Hdr", "header", "hdr");
+    } elsif(@_>2 and formdate(\$_)) {
+      my($date)=($_,shift);
+      my($amnt)=pop;
+      my($text)="@_";
+      return row( $date, $text, $amnt );
+    } else {
+      return row( "@_" );
     };
-    push(@res,$_);
+    $_="  $_" for @_;
   };
-  for(@res){
-    $_=$_->text if ref;
-  };
-  local($")=" ";
-  "@res";
 };
 sub main {
-  local(@_)=@_;
-  my(@tsv)=map { path($_) } sort glob("tsv/2024-Q1.tsv");
-  say for @tsv;
-  my($g,@g)=[];
-  push(@g,$g);
-  for my $if(sort @tsv){
-    my($of)=$if;
-    for($of){
-      s{tsv}{html}g;
-      $_=path($_);
-    };
-    @_=TsvWord->load_file($if);
-    say scalar(@_);
-    @_=grep { $_->level == 5 } @_;
-    my(@gs,@g);
-    push(@gs,[shift]);
-    push(@gs,[shift,shift]);
-    @_=sort { $a->cy <=> $b->cy  } @_;
-    while(@_){
-      push(@gs,[group_find(\@_)]);
-    };
-    eex(\@gs);
-#        my($state)="";
-#        my(@group);
-#        next unless @_;
-#        say ref($_[0]);
-#        my($i)=0;
-#        while(@_){
-#          ++$i;
-#          if(exists $trig{$_[0]->text}){
-#            $state=$_[0]->text;
-#            push(@g,$g=[]);
-#            if($_[0]->text eq "POLLOCK"){
-#              push(@$g,[shift(@_)]);
-#              push(@g,$g=[]);
-#            };
-#          };
-#          my(@tmp)=@{find_group(\@_)};
-#          @tmp = sort { $a->cx <=> $b->cx } @tmp;
-#          @tmp = grep { defined } @tmp;
-#          push(@$g,\@tmp);
-#        };
-  };
-#      for(@g) {
-#        for(@{$_}){
-#          if(grep { $trig{$_->text} } @$_) {
-#            say group_text(@$_);
-#          };
-#        };
-#      };
-}
+  our(@trn,@inv);
+  for my $period ( keys %data ) {
+    local(*data)=$data{$period};
+    (*trn,*inv) =map { $data{$_} } qw( trn inv ); 
+    say scalar(@trn), " transactions";
+    say scalar(@inv), " investments";
+    say "<table>";
+    say trn($_) for @trn;
+    say "</table>";
+  }
+};
 main(@ARGV);
