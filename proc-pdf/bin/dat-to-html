@@ -30,6 +30,7 @@ sub formdate {
   $_=join("-",$y,$m,$d); 
   return 1;
 };
+my($acct,$y,$q);
 sub trn {
   my($trn)=shift;
   local(*_)=$trn->word;
@@ -37,29 +38,39 @@ sub trn {
   @_=map { $_->text } @_;
   for($_[0]) {
     local($")=" ";
-    if($_ eq "Date"){
-      return row("Hdr", "header", "hdr");
+    if($_ eq "Date" or $_ eq "TRANSACTIONS"){
+      return (); #row("Hdr", "header", "hdr");
     } elsif(@_>2 and formdate(\$_)) {
       my($date)=($_,shift);
       my($amnt)=pop;
       my($text)="@_";
-      return row( $date, $text, $amnt );
+      return row( $y,$q,$acct, $date, $text, $amnt );
+    } elsif(@_>2 and m{^[0-9]+$}) {
+      eex "@_";
+      $acct=$_[0];
+#          return row( "@_" );
     } else {
-      return row( "@_" );
+      return row("@_");
     };
-    $_="  $_" for @_;
+    $_="**$_" for @_;
   };
 };
 sub main {
   our(@trn,@inv);
-  for my $period ( keys %data ) {
-    local(*data)=$data{$period};
-    (*trn,*inv) =map { $data{$_} } qw( trn inv ); 
-    say scalar(@trn), " transactions";
-    say scalar(@inv), " investments";
-    say "<table>";
-    say trn($_) for @trn;
-    say "</table>";
+  my(@txt);
+  push(@txt, "<table>");
+  for ( sort keys %data ) {
+    $y=$_;
+    for ( sort keys %{$data{$y}} ) {
+      $q=$_;
+      local(*data)=$data{$y}{$q};
+      if($data{trn}) {
+        *trn=$data{trn};
+        push(@txt, trn($_)) for @trn;
+      }
+    }
   }
+  push(@txt, "</table>");
+  path("trn.html")->touchpath->spew(@txt);
 };
 main(@ARGV);

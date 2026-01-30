@@ -4,4 +4,4 @@ ctags --recurse \
   --languages=Perl \
   --perl-kinds=+cfp \
   --fields=+nksSaf \
-  bin lib 
+  bin lib tmp/lib

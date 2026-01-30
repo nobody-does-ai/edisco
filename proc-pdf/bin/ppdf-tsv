@@ -25,8 +25,6 @@ our(%file);
 # the lib directory.  not normally needed, should be
 # commented out.
 #require "$ENV{HOME}/stow/ex-code/gather.pl";
-use vars qw( $coder );
-*coder=\$Tsv::coder;
 sub main;
 #    @ARGV=glob("src/2024-Q4.pdf") unless @ARGV;
 @ARGV=glob("src/202?-Q?.pdf") unless @ARGV;
@@ -46,7 +44,6 @@ sub main {
     @_=pdf_to_pgs($pdf);
     @_=pdf_to_png(@_);
     @_=png_to_tsv(@_);
-    eex($tsv);
     @_=tsv_to_one($tsv,@_);
   };
 } 

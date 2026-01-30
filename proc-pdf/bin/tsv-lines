@@ -15,15 +15,15 @@ use Carp::Always;
 use Tsv;
 use TsvLine;
 our(@VERSION) = qw( 0 1 0 );
-sub proc_file($);
+sub proc_file;
 my(%data);
+my($y,$q);
 sub main {
   local(@_)=@_;
   @_=map { path($_) } sort glob("tsv/202?-Q?.tsv") unless @_;
   for(@_) {
     local(@_)=map { split m{([/.-])} } $_->basename(".tsv");
-    my($y,undef,$q)=@_;
-    eex(@_);
+    ($y,undef,$q)=@_;
     $data{$y}{$q}=proc_file($_);
   };
   use Data::Dumper;
@@ -31,38 +31,134 @@ sub main {
   $Data::Dumper::Sortkeys=1;
   path("dat/all.dat.pl")->touchpath->spew(Dumper(\%data));
 };
-{
-  sub proc_file($) {
-    die "usage: proc_file(\$if)" unless @_==1;
-    die "paths required" unless @_==(grep { safe_isa($_,'Path::Tiny') } @_);
-    my(@all,@inv,@trn); 
-    my($part)=\@all;
-    my(%trig) = map { $_, $part } qw(
-    TRANSACTIONS INVESTMENTS INSURED Page POLLOCK
-    );
-    $_=$part for(values %trig);
-    $trig{TRANSACTIONS}=\@trn;
-    $trig{INVESTMENTS}=\@inv;
-    my($if)=shift;
-    my($of)=$_;
-    for($of){
-      s{tsv}{html}g;
-      $_=path($_);
+my(%acct);
+sub fix_trn {
+  our(@trn);
+  *trn=shift;
+  @trn = grep { $_->word(0)->text ne 'TRANSACTIONS' } @trn;
+
+  @trn = grep { $_->text ne "Date Description Amount" } @trn;
+  my(@acct)=grep { $trn[$_]->word(0)->text =~ m{^\d+$} } 0 .. $#trn;
+  push(@acct,$#trn);
+  my($pos)=0;
+  while(@acct){
+    my($idx)=shift(@acct);
+    my($acct)=$trn[$idx];
+    $trn[$idx]=undef;
+    my($anum)=$acct->word(0)->text;
+    $acct{$anum}=$acct;
+    while($pos<$acct[0]){
+      if(defined($trn[$pos])) {
+        $trn[$pos]->{anum}=$anum;
+      };
+      ++$pos;
     };
-    @_=TsvWord->load_file($if);
-    @_=TsvLine->from(@_);
-    while(@_) {
-      my($text)=$_[0]->word(0)->text;
-      if($trig{$text}) {
-        if($part ne $trig{$text}) {
-          $part=$trig{$text};
-          push(@$part,$_[0]);
-        };
-      }
-      push(@$part,shift);
-    }
-    my($rel)={ inv=>\@inv, trn=>\@trn, all=>\@all };
-    $rel;
   };
-}
+  @trn = grep { defined } @trn;
+  for(my $i=1;$i<$#trn;$i++){
+    my($trn)=$trn[$i-1];
+    my($nxt)=$trn[$i];
+    next if $nxt->left <= 200;
+    my($arr)=$trn->word;
+    splice(@$arr,@$arr-1,0,@{$nxt->word});
+    splice(@trn,$i,1);
+    --$i;
+#        eex($trn->text);
+  };
+  for(@trn){
+    local(*_)=$_->word;
+    my($date)=shift->text;
+    my($amnt)=pop->text;
+    my($acct)=$_->{anum};
+    $_={date=>$date,text=>$_->text,amnt=>$amnt,acct=>$acct,y=>$y,q=>$q};
+  };
+};
+sub fix_inv {
+  our(@inv);
+  *inv=shift;
+  my(%skip);
+  $skip{'Number of Cost|| Unrealized'}=1;
+  $skip{'Number of Cost Unrealized'}=1;
+  $skip{'Share price Market value'}=1;
+  $skip{'shares basis gain or loss'}=1;
+  $skip{'INVESTMENTS'}=1;
+  $skip{'cons Share price Market value'}=1;
+  $skip{'basis gain or loss'}=1;
+  @inv = grep { $_->word(0)->left < 620 } @inv;
+  @inv = grep { !$skip{$_->word(0)->text} } @inv;
+  my(@acct)=grep { 
+    $inv[$_]->word(0)->text =~ m{^(\d+|Total)$} } 0 .. $#inv;
+  push(@acct,$#inv);
+  my($pos)=0;
+  while(@acct){
+    my($idx)=shift(@acct);
+    last unless @acct;
+    my($acct)=$inv[$idx];
+    $inv[$idx]=undef;
+    my($anum)=$acct->word(0)->text;
+    $acct{$anum}=$acct;
+    while($pos<$acct[0]){
+      if(defined($inv[$pos])) {
+        $inv[$pos]->{anum}=$anum;
+      };
+      ++$pos;
+    };
+  };
+  @inv = grep { defined } @inv;
+  for(my $i=1;$i<@inv;$i++){
+    my($inv)=$inv[$i-1];
+    my($nxt)=$inv[$i];
+    splice(@inv,$i-1,2,[$inv,$nxt]);
+  };
+  my($pop);
+  eex(ref($inv[$#inv]));
+  if(ref($inv[$#inv]) ne 'ARRAY'){
+    $pop=pop(@inv);
+    eex(ref($pop),$pop);
+  };
+  for(@inv) {
+#        next if ref($_) eq 'TSVLine' and $_->word(0)->text eq 'Total';
+    die ref($_) unless ref($_) eq 'ARRAY';
+    die pp($_) unless 2==@$_;
+    my($inv,$nxt)=@$_;
+    eex({inv=>$inv,nxt=>$nxt}) if 5>=@{$inv->word};
+    my($num,$pri,$val,$basis,$ugain)=map { $_->text } splice(@{$inv->word},-5,5);
+    $_={ val=>{ num=>$num, pri=>$pri, val=>$val, basis=>$basis, ugain=>$ugain }};
+    $_->{desc}=$inv->text;
+    $_->{cat}=$nxt->text;
+    $_->{acct}=$inv->{anum};
+    $_->{page}=$inv->{page_num};
+    $_->{y}=$y;
+    $_->{q}=$q;
+  };
+  eex(\@inv);
+  eex("done");
+};
+sub proc_file($) {
+  local(@_)=@_;
+  die "usage: proc_file(\$if)" unless @_==1;
+  my(@all,@inv,@trn); 
+  my($part)=\@all;
+  my(%trig) = map { $_, $part } qw(
+  TRANSACTIONS INVESTMENTS INSURED Page POLLOCK
+  );
+  $_=$part for(values %trig);
+  $trig{TRANSACTIONS}=\@trn;
+  $trig{INVESTMENTS}=\@inv;
+  my($if)=shift;
+  @_=TsvWord->load_file($if);
+  @_=TsvLine->from(@_);
+  @_=sort { $a->cy <=> $b->cy } @_;
+  while(@_) {
+    my($text)=$_[0]->word(0)->text;
+    if($trig{$text}) {
+      $part=$trig{$text};
+    }
+    push(@$part,shift);
+  }
+  @all=();
+  fix_trn(\@trn);
+  fix_inv(\@inv);
+  { inv=>\@inv, trn=>\@trn, all=>\@all };
+};
 main(@ARGV);

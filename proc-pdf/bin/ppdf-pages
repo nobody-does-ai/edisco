@@ -7,7 +7,6 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use Getopt::WonderBra;
-use TsvUtil;
 our(@VERSION) = qw( 0 1 0 );
 
 # ppdf-split: Split PDF into individual pages
@@ -32,28 +31,7 @@ sub main (@) {
     my ($fmt)="%-20s";
     printf STDERR "$fmt %s ...\n", $_, $pages{$_};
   }
-
-  my($fmt)="pgs/%s-%03d.pdf";
-  my ($op)=0;
-  my $pp=0;
-  for(sort keys %pages) {
-    my ($if)=path($_);
-    my ($pc)=$pages{$_};
-    my ($pg);
-    for ($pg=1;$pg<$pc;$pg++ ) {
-      my ($ib)=$if->basename('.pdf');;
-      my ($of)=path(sprintf($fmt,$ib,$pp++));
-      $of->parent->mkdir;
-      my (@cmd)=(
-        qw(qpdf),
-        $if,
-        qw( --pages .),
-        $pg,
-        '--',
-        $of);
-      system(@cmd);
-    };
-    say STDERR "extracted $pg pages from $if";
-  }
 }
+
+
 main(@ARGV);

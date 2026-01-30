@@ -5,50 +5,85 @@ use Image::Magick;
 use Nobody::Util;
 use TsvWord;
 use TsvLine;
-require "$ENV{HOME}/stow/ex-code/gather.pl";
+use Statistics::Lite;
+#require "$ENV{HOME}/stow/ex-code/gather.pl";
 # Usage: ./tsv-render input.tsv output.png
-my ($in_file, $out_file) = @ARGV;
-$in_file="tsv/2024-Q1.tsv" unless defined $in_file;
-die "Usage: $0 input.tsv output.png\n" unless $in_file;
-unless(defined($out_file)) {
-  for($out_file="$in_file")  {
-    $_=path($_)->basename(".tsv");
-    $_="$_.png";
-  };
-};
-my $tsv = [ TsvLine->load_file($in_file) ];
-my @rows = @$tsv;
-eex(@rows);
-
-# Optimized: Try to get dimensions from Page object (Level 1)
-my ($page) = (grep { $_->level == 1 } @rows);
-
-my @words = grep { $_->level == 5 } @rows;
-die "No words found in TSV.\n" unless @words;
-
-my ($width, $height);
-$width  = $page->width;
-$height = $page->height;
-
-my $image = Image::Magick->new(size => "${width}x${height}");
-$image->Read('xc:white');
-
-# Calculate a consistent pointsize based on average word height to avoid "ransom note" look
-my $avg_height = 0;
-$avg_height += $_->height for @words;
-$avg_height /= scalar @words;
-my $fixed_pointsize = $avg_height * 0.8;
-
-for my $w (@words) {
-    $image->Annotate(
-        text      => $w->text,
-        pointsize => $fixed_pointsize,
-        fill      => 'black',
-        x         => $w->left,
-        y         => $w->top + $fixed_pointsize, 
-        font      => 'Liberation-Mono-Bold' 
+my @f = map { path($_) } sort glob("tsv/2024-Q1-???.tsv");
+my $od = path("png");
+sub do_file {
+  my($if)=shift;
+  my($of)=$od->child($if->basename(".tsv").".png");
+  my(@tsv)=TsvWord->load_file($if);
+  my($pg)=(grep { $_->level==1 } @tsv);
+  my(@row)=sort { $a->cy <=> $b->cy } TsvLine->from(@tsv);
+  my($img)=Image::Magick->new(size=>join("x",$pg->width,$pg->height));
+  my($th)=text_height(@row);
+  my $fixed_pointsize = $th * 0.8;
+  $img->Read("xc:white");
+  for my $w(@row) {
+    $img->Annotate(
+      text=>$w->text,
+      pointsize=>$fixed_pointsize,
+      fill=>'black',
+      x=>$w->left,
+      y=>$w->top+$fixed_pointsize,
+      font=>'Liberation-Mono-Bold',
     );
-}
-
-$image->Write($out_file);
-say "Rendered $in_file to $out_file (${width}x${height}) using fixed pointsize: $fixed_pointsize";
+  };
+  $img->Write($of->touchpath->stringify);
+};
+for(@f){
+  do_file($_);
+};
+sub text_height {
+  local(@_)=@_;
+  my(%h);
+  for(@_){
+    $h{$_->height}++;
+  };
+  my($mf)=max(values %h);
+  my($m)=min(grep { $h{$_}==$mf } keys %h);
+  $m;
+};
+__DATA__
+my @tsv = TsvWord->load_file($in_file);
+my @row = TsvLine->from(@tsv);
+my (@page) = (sort { $a->cy <=> $b->cy } grep { $_->level == 1 } @tsv);
+my ($top)=0;
+for(@page) {
+  $_->
+};
+exit(0);
+my ($w,$h)=($page[0]->right,$page[0]->bottom);
+my ($image)=Image::Magick->new(size => join('x',$w,$h));
+my($th)=text_height(@row);
+my $fixed_pointsize = $th * 0.8;
+for my $w(@row) {
+  $image->Annotate(
+    text=>$w->text,
+    pointsize=>$fixed_pointsize,
+    fill=>'black',
+    x=>$w->left,
+    y=>$w->top+$fixed_pointsize,
+    font=>'Liberation-Mono-Bold',
+  );
+};
+say $image->Write($out_file);
+#    eex($image);
+#    
+#    for my $w (@row) {
+#      $image->Annotate(
+#        text      => $w->text,
+#        pointsize => $fixed_pointsize,
+#        fill      => 'black',
+#        x         => $w->left,
+#        y         => $w->top + $fixed_pointsize, 
+#        font      => 'Liberation-Mono-Bold' 
+#      );
+#    }
+#    
+#    #    for my $page(@page) {
+#    #      my($image)=$page->{img};
+#    #      $image->Write($out_file);
+#    #    #      say "Rendered $in_file to $out_file (${width}x${height}) using fixed pointsize: $fixed_pointsize";
+#    #    };
