@@ -130,12 +130,15 @@ sub nsort {
   return sort { $a <=> $b } @_;
 };
 sub union {
-  local(@_)=@_;
+  local(@_)=grep{defined}@_;
   my($self)=$_[0];
   shift unless ref($self);
   my(@v,@h);
   @_=map { $_->rect } @_;
   for(@_) {
+    unless(defined($_->{x1})){
+      U::confess(U::pp($self,\@v,\@h,\@_));
+    };
     push(@h,$_->left,$_->right);
     push(@v,$_->top,$_->bottom);
   };

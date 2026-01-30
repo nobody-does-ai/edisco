@@ -3,14 +3,18 @@ use common::sense;
 use Nobody::Util;
 use List::Util;
 use TsvWord;
+use Carp qw(croak confess cluck carp);
+use File::stat qw(:FIELDS);
 use TsvRect;
+use Nobody::PP;
+use autodie;
 our(@EXPORT);
 BEGIN {
   @EXPORT= qw(
 fname_parse
 group_find
 group_text
-pdf_page_count
+get_page_count
 pdf_to_pgs
 pdf_to_png
 png_to_tsv
@@ -18,9 +22,11 @@ tsv_combine_files
 tsv_to_one
   );
 };
-sub fuckoff {
-  die @_;
-}
+my(%verbose);
+BEGIN {
+#      $verbose{skips}=1;
+#      $verbose{cmds}=1;
+};
 sub group_text {
   return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
 };
@@ -60,7 +66,7 @@ sub tsv_format {
   };
   join("\n",@_,"");
 };
-sub pdf_page_count {
+sub get_page_count {
   my ($pdf) = @_;
   my @cmd = ('pdfinfo', $pdf);
   my $info = qx/@cmd 2>&1/;
@@ -69,19 +75,22 @@ sub pdf_page_count {
   die "Error: Could not determine page count for $_" unless $pages_line;
   return $pages_line;
 }
-sub get_page_count {
-  goto &pdf_page_count;
-}
-my(%verbose);
 sub tsv_to_one {
-  die "send paths" unless @_==(grep { safe_isa($_,'Path::Tiny') } @_);
   local(@_)=@_;
   my($otsv,@itsv)=splice@_;
   my(@tsv);
   my(%max)=qw( block_num 0 page_num 0 top 0 );
   my(%off)=%max;
-  say scalar(@itsv), " files to parse";
+  my($time)=time;
+  if(-e $otsv) {
+    stat($otsv);
+    my($ot)=$st_mtime;
+    my($it)=sort { $b <=> $a } map { stat($_); $st_mtime } @itsv;
+    $otsv->remove if($ot<$it);
+  };
+  return $otsv if -e $otsv;
   for(@itsv) {
+    say STDERR "$_ => $otsv";
     local(@_)=TsvWord->parse_file($_);
     for my $tsv(@_) {
       for my $key(keys %max) {
@@ -90,10 +99,8 @@ sub tsv_to_one {
       };
     };
     push(@tsv,[@_]);
-    eex $tsv[0];
     %off=%max;
   };
-  $otsv->remove;
   @tsv=tsv_format(@tsv);
   $otsv->touchpath->spew(
     @tsv
@@ -107,20 +114,11 @@ sub pdf_to_png {
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
   if($of->exists) {
     err("skip  $if to $of") if $verbose{skips};
-    return $of;
-  };
-  if(my $pid=fork){
-    while($pid!=waitpid($pid,0)){
-      eex "??? $?";
-    };
-    die "pdftoppm:$?" if $?;
   } else {
-    $of->parent->mkdir;
-    open(STDOUT,">",$of->stringify);
-    exec(qw(pdftoppm -png -singlefile), $if);
-    die "exec:pdftoppm:$!";
+    my(@cmd)=qw(pdftoppm -png -singlefile $if > $of);
+    run($if,$of,@cmd);
   };
-  return path($of);
+  return $of;
 };
 sub png_to_tsv {
   die "usage: png_to_tsv(\$png)" unless @_;
@@ -134,16 +132,16 @@ sub png_to_tsv {
   if ( -e "$of" ) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
-    err("xform $if to $of");
     my @tcmd = (
       'tesseract',
       '-l', 'eng',
       '$if',
       "-",
       'tsv',
+      '>',
+      '$of'
     );
     run($if,$of,@tcmd);
-    die "(@tcmd)" if $?;
   };
   return $of;
 };
@@ -151,16 +149,14 @@ sub pdf_to_pgs {
   return map { pdf_to_pgs($_) } @_ unless 1==@_;
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
-  my($pages)=pdf_page_count($if);
+  my($pages)=get_page_count($if);
   for(my $pg=0;$pg<$pages;$pg++) {
     my($of)=path(sprintf($fmt,$if->basename(".pdf"),$pg));
     push(@_,$of);
     if(-e $of) {
       err("skip  $if to $of") if $verbose{skips};
     } else {
-      err "xform $if to $of";
-      $of->parent->mkdir;
-      my (@cmd)=( qw(qpdf), '$if', qw( --pages .), 1+$pg, '--', '-');
+      my (@cmd)=( qw(qpdf), '$if', qw( --pages .), 1+$pg, '--', '-', '>', '$of');
       run($if,$of,@cmd);
     };
   };
@@ -191,40 +187,40 @@ sub group_find {
   if($_[0]->text eq "POLLOCK"){
     return shift;
   };
-  my($bot,@word)=map { $_->bottom, $_ } shift;
+  my($blk,$bot,@word)=map { $_->block_num,$_->bottom, $_ } shift;
+#      my(@skip);
   while(@_ and ($_[0]->cy)<$bot) {
-    push(@word,shift);
+#        if($_[0]->block_num == $blk) {
+      push(@word,shift);
+#        } else {
+#          push(@skip,shift);
+#        }
   };
+#      unshift(@_,@skip);
   @word = sort { $a->left <=> $b->left } @word;
   @word;
 };
 sub run {
-  if(my $pid=fork) {
-    my($key);
-    while(($key=waitpid(0,0))>1) {
-      return if $key==$pid;      
-    };
-    die "waitpid: $key";
-  };
-  my($if)=shift;
-  my($of)=shift;
-  my($tf)=path($of.".tmp");
   local(@_)=@_;
-  my(%open)=qw( $if 1 $of 1 );
-  for(@_) {
-    if(m{^\$[io]f$}) {
-      $_=eval $_;
-      fuckoff "$@" if "$@";
+  my($if)=shift;
+  my($ff)=shift;
+  my($of)=path("$ff.tmp");
+  $_->touchpath->remove for $ff,$of;
+  say STDERR "$if => $ff";
+  @_=map { split } @_;
+  for(@_){
+    if($_ eq '$if') {
+      $_=$if;
+    } elsif ($_ eq '$of') {
+      $_=$of;
     };
   };
-  open(STDIN,"<","$if");
-  open(STDOUT,">",$tf);
+  err("@_") if $verbose{cmds};
   system("@_");
   if($?) {
-    $tf->remove;
-    fuckoff "($if,$of,@_)";
+    $of->remove;
+    die "@_";
   };
-  $tf->move($of);
-  exit(0);
+  $of->move($ff);
 };
 1;

@@ -67,19 +67,6 @@ sub new {
   $self->pack;
   $self;
 };
-sub parse_file {
-  U::eex(\@_, U::safe_isa(__PACKAGE__,$_[0]));
-  die "usage: TsvWord->parse_file(CLASS->path(\"name\"))" unless (
-    @_==2
-      and
-    U::safe_isa($_[0] , __PACKAGE__)
-  );
-  local(@_)=@_;
-  my($class,$file)=@_;
-  $file=U::path($file) unless ref($file);
-  @_=hash(map { [split m{[\t\n]}] } $file->lines);
-  @_;
-};
 sub pack {
   my($self)=$_[0];
   $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->{words}}); 

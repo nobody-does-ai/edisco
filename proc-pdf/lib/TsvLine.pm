@@ -17,6 +17,10 @@ use common::sense;
 sub new {
   local(@_)=@_;
   my($class)=ref($_[0])?$_[0]:shift;
+#      my %block_num = map { $_->block_num, undef } @_;
+#      if(1<(keys %block_num)){
+#        $TEXT="*$TEXT";
+#      };
   my($word)=shift;
   my(%data)=%$word;
   $data{text}=[$word];
@@ -29,6 +33,9 @@ sub new {
 sub pack {
   my($self)=$_[0];
   $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->{text}}); 
+  my $TEXT=join(" ", map { $_->text } @{$self->word});
+  $self->{TEXT}=$TEXT;
+  $self->{rect};
 }
 sub from {
   local(@_)=@_;
@@ -40,6 +47,16 @@ sub from {
     push(@line,TsvLine->new(U::group_find(\@_)));
   };
   @line;
+};
+sub extra {
+  local(@_)=@_;
+  my($self)=shift;
+  my($width)=$self->width;
+  my($word)=$self->word;
+  for(@$word){
+    $width-=($_->width);
+  };
+  $width;
 };
 sub word {
   my($self)=$_[0];

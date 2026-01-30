@@ -24,9 +24,9 @@ sub new {
   my($class)=U::class(shift);
   my(%data)=map { %$_ } shift;
   my(%rect);
-  for(qw(block line word par)) {
-    delete $data{$_."_num"};
-  };
+#      for(qw(block line word par)) {
+#        delete $data{$_."_num"};
+#      };
   for(qw(left top width height)){
     $rect{$_}=delete$data{$_};
   };
@@ -34,7 +34,7 @@ sub new {
     delete $data{$_} unless defined $data{$_};
   };
   my($self)={ %data };
-  $self->{rect}=TsvRect->new( %rect );
+  $self->{rect}=TsvRect->new( \%rect );
   bless($self,$class);
 };
 sub from {
@@ -61,6 +61,22 @@ sub hash {
   };
   @_;
 };
+sub parse_file {
+  die "usage: ".__PACKAGE__."->parse_file(path(\"name\"))" unless (
+    @_==2
+      and
+    $_[0]->isa(__PACKAGE__)
+  );
+  local(@_)=@_;
+  my($class,$file)=@_;
+  $file=U::path($file) unless ref($file);
+  @_=hash(map { [split m{[\t\n]}] } $file->lines);
+  @_;
+};
+sub block_num {
+  my($self)=shift;
+  $self->{block_num};
+}
 sub load_file {
   my($self)=shift;
   $self->from($self->parse_file(@_));
