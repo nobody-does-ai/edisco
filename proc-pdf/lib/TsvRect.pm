@@ -1,12 +1,7 @@
 package TsvRect;
 use common::sense;
-use lib "lib";
 use Tsv;
 our(@ISA)=qw(TSV);
-BEGIN {
-  use FindBin qw($Script $Bin);
-  use lib "$Bin/../lib";
-};
 use common::sense;
 {
   package U;

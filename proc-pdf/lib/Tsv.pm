@@ -1,11 +1,13 @@
 package Tsv;
-BEGIN { open(STDOUT,">&STDERR"); };
 use common::sense;
-use Nobody::Util;
+BEGIN {
+  package U;
+  use Nobody::Util;
+};
 our($DEBUG)=0;
 sub new {
   local(@_)=@_;
-  my($class)=class(shift);
+  my($class)=U::class(shift);
   my($self)=(ref($_[$#_]) eq 'HASH')?pop:{};
   bless($self,$class);
   $self;
@@ -41,6 +43,6 @@ unless(caller){
     my($key)="key$i";
     $obj=$obj->new({$key=>$obj});
   };
-  eex($obj);
+  U::eex($obj);
 };
 1;

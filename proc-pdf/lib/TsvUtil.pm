@@ -2,7 +2,6 @@ package TsvUtil;
 use common::sense;
 use Nobody::Util;
 use List::Util;
-use lib "lib";
 use TsvWord;
 use TsvRect;
 our(@EXPORT);
@@ -189,6 +188,9 @@ sub tsv_combine {
 sub group_find {
   local(@_)=@_;
   local(*_)=shift;
+  if($_[0]->text eq "POLLOCK"){
+    return shift;
+  };
   my($bot,@word)=map { $_->bottom, $_ } shift;
   while(@_ and ($_[0]->cy)<$bot) {
     push(@word,shift);
