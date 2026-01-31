@@ -1,0 +1,16 @@
+/* /var/www/html/finance.css */
+td[t] { text-align: left; background: #aaaaff; }
+td[n] { 
+    text-align: right; 
+    font-variant-numeric: tabular-nums; 
+    background: #aaffaa;
+}
+td[neg] { color: #c00; }
+
+td {
+  border: solid blue 2px;
+  padding: 4px;
+}
+table {
+  border-collapse: collapse;
+}
