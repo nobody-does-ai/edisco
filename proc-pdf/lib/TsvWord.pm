@@ -61,6 +61,15 @@ sub hash {
   };
   @_;
 };
+sub fixup {
+  local(*_)=shift;
+  if($_[$#_] =~ m{^(account:)(.*)}){
+    my($a,$b)=(hash(@_),hash(@_));
+    eex($a);
+    eex($b);
+  };
+  return \@_;
+};
 sub parse_file {
   die "usage: ".__PACKAGE__."->parse_file(path(\"name\"))" unless (
     @_==2
@@ -70,7 +79,13 @@ sub parse_file {
   local(@_)=@_;
   my($class,$file)=@_;
   $file=U::path($file) unless ref($file);
-  @_=hash(map { [split m{[\t\n]}] } $file->lines);
+  my(@i);
+  @_=map { [split m{[\t\n]}] } $file->lines;
+  @_=hash(@_);
+  for(@_){
+    $_->{text} =~ s{(account:)(.*)}{$1 $2};
+  }
+  @_ = map { ref($_)eq'ARRAY'?(@$_):$_ } @_;
   @_;
 };
 sub block_num {

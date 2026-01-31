@@ -7,6 +7,7 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use Getopt::WonderBra;
+use TsvUtil qw(get_page_count);
 our(@VERSION) = qw( 0 1 0 );
 
 # ppdf-split: Split PDF into individual pages
@@ -18,6 +19,11 @@ sub help {
 }
 sub main (@) {
   local(@_)=@_;
+  my($list)=0;
+  if($_[0] eq '-l') {
+    $list=1;
+    shift;
+  };
   @_=glob("src/*.pdf") unless @_;
 
   my(%pages);
@@ -29,7 +35,7 @@ sub main (@) {
   };
   for(sort keys %pages) {
     my ($fmt)="%-20s";
-    printf STDERR "$fmt %s ...\n", $_, $pages{$_};
+    printf STDERR "$fmt %s \n", $_, $pages{$_};
   }
 }
 

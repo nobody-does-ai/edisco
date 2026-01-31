@@ -13,15 +13,20 @@ use TsvLine;
 our(@VERSION) = qw( 0 1 0 );
 our(%data);
 (*data)=require(path("dat/all.dat.pl")->absolute->stringify);
+my (@num);
 sub row {
   local(@_)=@_;
-  my($extra)=(@_>1?"":'colspan="4"');
+  for(@_) {
+    s{&}{and}g;
+  };
   $_="  $_" for @_;
-  @_=map { ("<td $extra>", $_, "</td>") } @_;
-  $_="  $_" for @_;
-  unshift(@_,"<tr>");
-  push(@_,"</tr>");
-  @_;
+  for(0 .. $#_) {
+    my ($extra)=$num[$_]?"n":"t";
+    $_[$_]="  <td $extra> $_[$_] </td>\n";
+  };
+  unshift(@_,"<tr>\n");
+  push(@_,"</tr>\n");
+  join(" ",@_);
 };
 sub formdate {
   local(*_)=$_[0];
@@ -32,45 +37,80 @@ sub formdate {
 };
 my($acct,$y,$q);
 sub trn {
-  my($trn)=shift;
-  local(*_)=$trn->word;
-  local($_)=$_[0];
-  @_=map { $_->text } @_;
-  for($_[0]) {
-    local($")=" ";
-    if($_ eq "Date" or $_ eq "TRANSACTIONS"){
-      return (); #row("Hdr", "header", "hdr");
-    } elsif(@_>2 and formdate(\$_)) {
-      my($date)=($_,shift);
-      my($amnt)=pop;
-      my($text)="@_";
-      return row( $y,$q,$acct, $date, $text, $amnt );
-    } elsif(@_>2 and m{^[0-9]+$}) {
-      eex "@_";
-      $acct=$_[0];
-#          return row( "@_" );
-    } else {
-      return row("@_");
-    };
-    $_="**$_" for @_;
-  };
+  my($trn)={ map { %$_ } shift };
+  my(@key)=qw( y q anum date text amnt );
+  @num=qw( 0 0 0 0 0 1 );
+  row(map { delete $trn->{$_} } @key);
+};
+sub inv {
+  my($inv)={ map { %$_ } shift };
+  delete $inv->{page};
+  @num=qw( 0 0 0 0 0 1 1 1 1 1 );
+  my(@key)=qw( y q anum desc cat num pri val basis ugain );
+  my(@val)=map { delete $inv->{$_} } @key;
+  push(@val,map { join(" => ", $_, $inv->{$_}) } keys %$inv);
+  row(@val);
 };
 sub main {
   our(@trn,@inv);
   my(@txt);
-  push(@txt, "<table>");
+  my(@data);
+  our(%acct);
+  *acct=delete $data{acct};
+  for(keys %acct) {
+    local(@_)=keys %{$acct{$_}};
+    $acct{$_}=shift;
+  };
+  eex( \%acct );
   for ( sort keys %data ) {
     $y=$_;
     for ( sort keys %{$data{$y}} ) {
       $q=$_;
-      local(*data)=$data{$y}{$q};
-      if($data{trn}) {
-        *trn=$data{trn};
-        push(@txt, trn($_)) for @trn;
-      }
+      push(@data,[$y,$q,$data{$y}{$q}]);
     }
-  }
-  push(@txt, "</table>");
-  path("trn.html")->touchpath->spew(@txt);
+  };
+  for(@data){
+    local(*data)=pop @$_;
+    push(@inv,@{$data{inv}});
+    push(@trn,@{$data{trn}});
+    say scalar(@trn), " transactions";
+    say scalar(@inv), " investments";
+  };
+  @trn = grep { $_ } map { keys %{$acct{$_}} } map { $_->{anum} } @trn;
+  @inv = grep { $_ } map { keys %{$acct{$_}} } map { $_->{anum} } @inv;
+#    
+#          local(*data)=$data{$y}{$q};
+#          say scalar(@trn), " transactions";
+#          if($data{trn}) {
+#            push(@trn,$data{trn});
+#            local(*trn)=$data{trn};
+#            $_=[trn($_)] for @trn;
+#          }
+#          @trn=flatten(@trn);
+#          say scalar(@trn), " transactions";
+#          say scalar(@inv), " investments";
+#          if($data{inv}) {
+#            push(@inv,$data{inv});
+#            local(*inv)=$data{inv};
+#            $_=[inv($_)] for @inv;
+#          };
+#          @inv=flatten(@inv);
+#          say scalar(@inv), " investments";
+#        }
+#      }
+#      @inv=("<table>",@inv,"</table>");
+#      @trn=("<table>",@trn,"</table>");
+#      my(@int)=(
+#        "<html>",
+#        "  <head>",
+#        '    <link rel="stylesheet" href="data.css"/>',
+#        "  </head>",
+#        "  <body>"
+#      );
+#      my(@out)=(
+#        "  </body>",
+#        "</html>"
+#      );
+#      path("data.html")->spew(map { $_, "\n" } (@int,@inv,@trn,@out,""));
 };
 main(@ARGV);

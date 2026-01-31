@@ -69,7 +69,7 @@ sub load_file {
 };
 sub text {
   my($self)=$_[0];
-  local(@_)=map { $_->text } @{$self->{text}};
-  return join(" ",@_);
+  local(@_)=map { ref($_)?$_->text:$_ } @{$self->{text}};
+  return join("\n    ",split(" \n ",join(" ",@_)));
 };
 1;

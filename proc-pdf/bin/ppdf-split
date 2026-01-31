@@ -33,7 +33,7 @@ sub main (@) {
     printf STDERR "$fmt %s ...\n", $_, $pages{$_};
   }
 
-  my($fmt)="pgs/%s-%03d.pdf";
+  my($fmt)="pdf/%s-%03d.pdf";
   my ($op)=0;
   my $pp=0;
   for(sort keys %pages) {

@@ -20,12 +20,11 @@ pdf_to_png
 png_to_tsv
 tsv_combine_files
 tsv_to_one
+older
   );
 };
 my(%verbose);
 BEGIN {
-#      $verbose{skips}=1;
-#      $verbose{cmds}=1;
 };
 sub group_text {
   return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
@@ -35,6 +34,25 @@ BEGIN {
   *cols=\@TsvWord::cols;
 };
 use Exporter qw(import);
+sub older {
+  local(@_)=@_;
+  my ($if,$of)=(shift,shift);
+  $if=path($if);
+  $of=path($of);
+  return 0 unless -e $of;
+  return 0 unless -e $if;
+  $if->stat;
+  my ($itime)=min($st_atime,$st_mtime,$st_ctime);
+  $of->stat;
+  my ($otime)=min($st_atime,$st_mtime,$st_ctime);
+  if($itime<=$otime) {
+#        say "$if ot $of";
+    return 1;
+  } else {
+    say "$if nt $of";
+    return 0;
+  };
+};
 sub err {
   say STDERR "@_";
 };
@@ -82,13 +100,16 @@ sub tsv_to_one {
   my(%max)=qw( block_num 0 page_num 0 top 0 );
   my(%off)=%max;
   my($time)=time;
-  if(-e $otsv) {
-    stat($otsv);
-    my($ot)=$st_mtime;
-    my($it)=sort { $b <=> $a } map { stat($_); $st_mtime } @itsv;
-    $otsv->remove if($ot<$it);
+  my(%older);
+  for(@itsv) {
+    if(older($_,$otsv)) {
+      eex "$_ ot $otsv";
+    } else {
+      $older{$_}=0;
+      eex "$_ nt $otsv";
+    };
   };
-  return $otsv if -e $otsv;
+  return $otsv unless keys %older;
   for(@itsv) {
     say STDERR "$_ => $otsv";
     local(@_)=TsvWord->parse_file($_);
@@ -112,10 +133,10 @@ sub pdf_to_png {
   my($if)=path($_[0]);
   die "$if does not exist" unless -e $if;
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
-  if($of->exists) {
+  if(older($if,$of)) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
-    my(@cmd)=qw(pdftoppm -png -singlefile $if > $of);
+    my(@cmd)=qw(pdftoppm -r 600 -png -singlefile $if > $of);
     run($if,$of,@cmd);
   };
   return $of;
@@ -129,7 +150,7 @@ sub png_to_tsv {
   die "$if does not exsit" unless $if->exists;
   my ($of)=path(sprintf($fmt,$if->basename(".png")));
   $of->parent->mkdir;
-  if ( -e "$of" ) {
+  if (older($if,$of)) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
     my @tcmd = (
@@ -150,10 +171,10 @@ sub pdf_to_pgs {
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
   my($pages)=get_page_count($if);
-  for(my $pg=0;$pg<$pages;$pg++) {
+  for(my $pg=1;$pg<$pages;$pg++) {
     my($of)=path(sprintf($fmt,$if->basename(".pdf"),$pg));
     push(@_,$of);
-    if(-e $of) {
+    if(older($if,$of)) {
       err("skip  $if to $of") if $verbose{skips};
     } else {
       my (@cmd)=( qw(qpdf), '$if', qw( --pages .), 1+$pg, '--', '-', '>', '$of');
@@ -188,18 +209,24 @@ sub group_find {
     return shift;
   };
   my($blk,$bot,@word)=map { $_->block_num,$_->bottom, $_ } shift;
-#      my(@skip);
   while(@_ and ($_[0]->cy)<$bot) {
-#        if($_[0]->block_num == $blk) {
       push(@word,shift);
-#        } else {
-#          push(@skip,shift);
-#        }
   };
-#      unshift(@_,@skip);
   @word = sort { $a->left <=> $b->left } @word;
   @word;
 };
+my(%pid);
+#    END {
+#      while(keys %pid) {
+#        my($pid)=waitpid(0,0);
+#        if($pid<1) {
+#          exit(0);
+#        };
+#        my($cmd)=delete $pid{$pid};
+#        warn "unknown child exited: $pid $?\n", next unless defined $cmd;
+#        warn "(@$cmd) exited $?";
+#      };
+#    };
 sub run {
   local(@_)=@_;
   my($if)=shift;
@@ -216,11 +243,22 @@ sub run {
     };
   };
   err("@_") if $verbose{cmds};
-  system("@_");
-  if($?) {
-    $of->remove;
-    die "@_";
+  if(my $pid=fork) {
+    child_wait;
+#        push($pid{$pid}=\@_);
+#        return;
+  } else {
+    system("@_");
+    if($?) {
+      $of->remove;
+      warn "@_\n";
+      exit(1);
+    };
+    if($of->move($ff)) {
+      exit(0);
+    } else {
+      exit(1);
+    };
   };
-  $of->move($ff);
 };
 1;

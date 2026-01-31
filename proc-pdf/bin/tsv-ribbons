@@ -19,7 +19,8 @@ use feature qw(signatures);
 our(@VERSION) = qw( 0 1 0 );
 sub main {
   my($tgt)=qr{macro.*strategies.*fund}i;
-  my(@tsv)=glob("tsv/*.tsv");
+  my(@tsv)=@_;
+  (@tsv)=glob("tsv/*.tsv") unless @tsv;
   my(%tgt);
   for my $tsv(map { path($_) } @tsv) {
     my($png)=path(sprintf("png/%s.png",$tsv->basename(".tsv")));

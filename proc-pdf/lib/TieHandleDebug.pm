@@ -3,6 +3,7 @@ package TieHandleDebug;
 use base Tie::StdHandle;
 
 sub TIEHANDLE {
+  die;
   if(@_==1) {
     push(@_,">&STDERR");
   };

@@ -1,7 +1,6 @@
-all:
-	./bin/ppdf-tsv
-#	./bin/tsv-lines
-#    	./bin/tsv-to-html
-#
+all: 
+
 tags: bin/* lib/*
 	./bin/mk-tags
+
+include /dev/null $(wildcard pages.mk)

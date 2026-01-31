@@ -4,9 +4,9 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
 use Nobody::Util;
-use TieHandleDebug;
-tie *STDOUT , 'TieHandleDebug';
-tie *STDERR , 'TieHandleDebug';
+#use TieHandleDebug;
+#tie *STDOUT , 'TieHandleDebug';
+#tie *STDERR , 'TieHandleDebug';
 use Carp::Always;
 use vars (@var);
 use Carp qw( cluck confess croak carp );
