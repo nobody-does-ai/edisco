@@ -4,9 +4,6 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
 use Nobody::Util;
-#use TieHandleDebug;
-#tie *STDOUT , 'TieHandleDebug';
-#tie *STDERR , 'TieHandleDebug';
 use Carp::Always;
 use vars (@var);
 use Carp qw( cluck confess croak carp );
@@ -15,7 +12,7 @@ use List::Util @List::Util::EXPORT_OK;
 use Nobody::PP;
 use TsvRect;
 use TsvWord;
-use TsvUtil;
+use TsvUtil qw( pdf_to_pgs pdf_to_png png_to_tsv tsv_to_one );
 use autodie;
 use common::sense;
 use feature qw(state);
