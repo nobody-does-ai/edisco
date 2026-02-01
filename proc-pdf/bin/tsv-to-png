@@ -5,11 +5,12 @@ use Image::Magick;
 use Nobody::Util;
 use TsvWord;
 use TsvLine;
-use Statistics::Lite;
-#require "$ENV{HOME}/stow/ex-code/gather.pl";
-# Usage: ./tsv-render input.tsv output.png
-my @f = map { path($_) } sort glob("tsv/2024-Q1-???.tsv");
-my $od = path("png");
+sub main;
+our($od) = path("out");
+main(map { path($_) } sort glob("tsv/2024-Q1-???.tsv"));
+sub main {
+  do_file($_) for @_;
+}
 sub do_file {
   my($if)=shift;
   my($of)=$od->child($if->basename(".tsv").".png");
@@ -31,9 +32,6 @@ sub do_file {
     );
   };
   $img->Write($of->touchpath->stringify);
-};
-for(@f){
-  do_file($_);
 };
 sub text_height {
   local(@_)=@_;
