@@ -89,6 +89,17 @@ sub child_wait {
     say STDERR "$kid returned $?" if $kid>1 and $?;
   } while( $kid>1 );
 };
+sub dump_obj($$){
+  eval "use Data::Dumper";
+  local(@_)=@_;
+  my($path)=shift;
+  my($data)=shift;
+  local($Data::Dumper::Sortkeys)=1;
+  local($Data::Dumper::Terse)=1;
+  local($Data::Dumper::Useqq)=1;
+  my($tmp)=path("$path.tmp")->touchpath->spew(Dumper($data));
+  $tmp->move($path);
+};
 sub QX {
   local(@_)=@_;
   my (@cmd)=@_;

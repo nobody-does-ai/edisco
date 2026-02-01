@@ -26,7 +26,7 @@ BEGIN {
   basename      sum          avg       max       
   min           mkdir_p      suckdir   getcwd    
   pasteLines    serdate      class     mkref     
-  open_fds      deparse      maybeRef           
+  open_fds      deparse      maybeRef  dump_obj
   file_id       WNOHANG      uniq      matrix    
   dirname       capture      safe_can child_wait
   safe_isa      
