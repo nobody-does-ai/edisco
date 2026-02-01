@@ -11,8 +11,8 @@ use Env qw( @PATH @PERL5LIB );
 our(@VERSION) = qw( 0 1 0 );
 
 my($pwd)=path(".");
-unshift(@PATH, $pwd->child("bin"));
-unshift(@PERL5LIB, $pwd->child("lib"));
+unshift(@PATH, $pwd->child("bin")->absolute);
+unshift(@PERL5LIB, $pwd->child("lib")->absolute);
 die "oops" unless $^F>fileno(STDLOG);
 unless(fork) {
   $ENV{BASH_XTRACEFD}=fileno(STDLOG);
