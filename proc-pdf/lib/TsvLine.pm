@@ -8,19 +8,17 @@ use common::sense;
   use Carp::Always;
   use Carp qw( croak cluck carp confess );
   use TsvWord;
-  use TsvUtil;
+  use TsvUtil qw( group_find vsort vcmp);
   use autodie;
   use Nobody::PP;
   our(@VERSION) = qw( 0 1 0 );
   our($DEBUG);
 };
+sub vsort;
+*vsort=\&U::vsort;
 sub new {
   local(@_)=@_;
   my($class)=ref($_[0])?$_[0]:shift;
-#      my %block_num = map { $_->block_num, undef } @_;
-#      if(1<(keys %block_num)){
-#        $TEXT="*$TEXT";
-#      };
   my($word)=shift;
   my(%data)=%$word;
   $data{text}=[$word];
@@ -41,12 +39,12 @@ sub from {
   local(@_)=@_;
   my($class)=U::class(shift);
   @_=grep { defined and $_->level == 5 } @_;
-  @_=sort { $a->cy <=> $b->cy } @_;
+  @_=vsort @_;
   my(@line);
-  while(@_) {
-    push(@line,TsvLine->new(U::group_find(\@_)));
+  while(@_){
+#        U::eex scalar(@_), scalar(@line);
+    push(@line,[U::group_find(\@_)]);
   };
-  @line;
 };
 sub extra {
   local(@_)=@_;
@@ -69,7 +67,11 @@ sub load_file {
 };
 sub text {
   my($self)=$_[0];
-  local(@_)=map { ref($_)?$_->text:$_ } @{$self->{text}};
-  return join("\n    ",split(" \n ",join(" ",@_)));
+  if(defined($_[1])) {
+    return $self->word($_[1])->text;
+  } else {
+    local(@_)=map { ref($_)?$_->text:$_ } @{$self->{text}};
+    return join("\n    ",split(" \n ",join(" ",@_)));
+  };
 };
 1;

@@ -71,12 +71,6 @@ sub pack {
   my($self)=$_[0];
   $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->{words}}); 
 }
-sub vsort {
-  local(@_)=@_;
-  @_=map { [ $_->cy, $_->cx, $_ ] } @_;
-  @_=sort { $a->[0] <=> $b->[0] or $a->[1] <=> $b->[1]  } @_;
-  map { $_->[2] } @_;
-};
 sub from {
   local(@_)=splice(@_);;
   my($class)=U::class(shift);

@@ -113,13 +113,18 @@ sub new {
   for( [ qw(dx x1 x2) ], [ qw(dy y1 y2) ] ) {
     my($d,$a,$b)=@$_;
     if(defined($tmp{$d})){
-      if(defined($tmp{$a})){
-        $tmp{$b}=$tmp{$a}+delete $tmp{$d};
-      } elsif(defined($tmp{$b})){
-        $tmp{$a}=$tmp{$b}-delete $tmp{$d};
-      } else {
-        die pp(\%tmp);
-      };
+      $d=delete $tmp{$d};
+      if(defined($tmp{$a})) {
+        if(defined($tmp{$b})) {
+          die "$tmp{$a}+$d!=$tmp{$b}" unless $tmp{$a}+$d==$tmp{$b};
+        } else {
+          $tmp{$b}=$tmp{$a}+$d;
+        }
+      } elsif(defined($tmp{$b})) {
+        $tmp{$a}=$tmp{$b}-$d;
+      }
+    } elsif (defined($tmp{$a})) {
+      $tmp{$b}=$tmp{$a};
     };
   };
   my($self)={%tmp};
@@ -147,9 +152,6 @@ sub union {
   return TsvRect->new({ 
       left=>shift @h, top=>shift @v, right=>pop @h, bottom=>pop @v 
     });
-};
-sub clone {
-  return U::class($_[0])->new(%{$_[0]});
 };
 sub rect {
   return shift;
@@ -212,9 +214,18 @@ unless(caller){
   package main;
   use Nobody::Util;
   TsvRect::import("main");
-  my(%d) = map { $_, int(rand(20)) } qw( x1 x2 y1 y2 );
-  $d{y2}+=40;
-  $d{x2}+=40;
-  my($rect)=TsvRect->new( \%d );
+  my(%d);
+  @d{ qw(x1 y1 dx dy ) } = sort {$a<=>$b} map { 200+int(rand(200)) } 0 .. 3;
+  my($r);
+  eex(\%d);
+  ($r)=TsvRect->new(%d);
+  eex($r);
+  $d{x2}=$r->x2;
+  $d{y2}=$r->y2;
+  eex(\%d);
+  ($r)=TsvRect->new(%d);
+  eex($r);
+  $d{x2}=$r->x2;
+  $d{y2}=$r->y2;
 };
 1;

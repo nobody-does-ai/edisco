@@ -3,6 +3,10 @@ use common::sense;
 BEGIN {
   package U;
   use Nobody::Util;
+  use TsvRect;
+  use TsvWord;
+  use TsvLine;
+  use TsvUtil;
 };
 our($DEBUG)=0;
 sub new {
@@ -12,6 +16,7 @@ sub new {
   bless($self,$class);
   $self;
 };
+
 sub clone {
   my($self)=$_[0];
   my($guts)=$self->export;
@@ -25,24 +30,27 @@ sub export {
   local($_);
   while(@_){
     $_=shift;
-    if(safe_isa($$_,'Tsv')){
+    if(U::safe_isa($$_,'TsvRect')) {
+      my(%hash);
+      for( qw( left top width height ) ){
+        $hash{left}=($$_)->left;
+        $hash{top}=($$_)->top;
+        $hash{width}=($$_)->width;
+        $hash{height}=($$_)->height;
+      };
+      $$_={ %hash };
+    } elsif(U::safe_isa($$_,'Tsv')){
       $$_=($$_)->export;
-    } elsif ( safe_isa($$_,'HASH') ) {
+    } elsif ( U::safe_isa($$_,'HASH') ) {
       push(@_,map { \($$_->{$_}) } keys %$$_);
-    } elsif ( safe_isa($$_,'ARRAY')) {
+    } elsif ( U::safe_isa($$_,'ARRAY')) {
       push(@_,map { \($$_->[$_]) } keys @$$_);
+    } elsif ( !ref($$_) ) {
+      $_=$$_;
     } else {
-      say $_;
+      die "\@_";
     };
   };
   $guts;
-};
-unless(caller){
-  my($obj)=Tsv->new({test=>1});
-  for(my $i=0;$i<10;$i++){
-    my($key)="key$i";
-    $obj=$obj->new({$key=>$obj});
-  };
-  U::eex($obj);
 };
 1;

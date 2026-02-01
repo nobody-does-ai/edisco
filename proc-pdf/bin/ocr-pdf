@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+use common::sense;
+use Path::Tiny;
+use autodie;
+
+my ($input)=path(shift);
+die "$input does not exist" unless $input->exists;
+my ($output)=$input->absolute->parent->child($input->basename(".pdf").".txt");
+# Step 1: Split PDF using qpdf
+say "Splitting $input...";
+my(@dbg);
+my($sel);
+sub run {
+  my(@cmd)=map{split}@_;
+  
+  if(my $pid=open(my $fh,"-|")){
+    while(<$fh>){
+      push(@dbg,$_);
+    };
+  } else {
+    open(STDERR,">&STDOUT");
+    exec @cmd;
+    die "exec:@cmd:$!";
+  };
+};
+my($dir)=path($input.".d");
+$dir->remove_tree;
+$dir->mkdir;
+link($input,$dir->child("input.pdf"));
+chdir($dir);
+run("qpdf --split-pages input.pdf page.pdf");
+
+# Step 2: Process each page
+my @pdf_pages = sort map { path($_) } glob("page*.pdf");
+die "No page_*.pdf files found" unless @pdf_pages;
+
+for my $pdf (@pdf_pages) {
+    my $stem = $pdf->basename;
+    my $tiff = path("$stem.tiff");
+    my $txt  = path("$stem.txt");
+
+    say "Converting $pdf to TIFF...";
+    run("gs -dNOPAUSE -dBATCH -sDEVICE=tiffgray -r300 -sOutputFile=$tiff $pdf");
+    say "Running tesseract OCR on $tiff...";
+    run("tesseract $tiff $stem -l eng ");
+}
+
+# Step 3: Concatenate all .txt files into output.txt
+say "Combining all text files into output.txt...";
+path("output.txt")->spew(join "", map { path($_)->slurp } sort glob("page*.txt"));
+link("output.txt","$output");
+say "Done.";

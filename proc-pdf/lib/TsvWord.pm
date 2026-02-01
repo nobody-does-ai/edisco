@@ -14,24 +14,44 @@ use common::sense;
 };
 use TsvText;
 our(@ISA)=qw(TsvText);
-our(@cols);
+our(@cols,@bad);
 BEGIN {
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
 };
+my(@word);
+#    BEGIN {
+#      for( qw( page par line word block ) ) {
+#        eval sprintf("sub %s { shift->{%s}; };\n", $_, $_."_num");
+#        eval sprintf("sub %s { shift->{%s}; };\n", $_."_num", $_."_num");
+#      };
+#      for( qw( conf ) ) {
+#        eval sprintf("sub %s { shift->{%s}; };\n", $_, $_);
+#      };
+#    };
 sub new {
   local(@_)=@_;
   my($class)=U::class(shift);
   my(%data)=map { %$_ } shift;
   my(%rect);
-#      for(qw(block line word par)) {
-#        delete $data{$_."_num"};
-#      };
   for(qw(left top width height)){
     $rect{$_}=delete$data{$_};
   };
-  for(keys %data){
-    delete $data{$_} unless defined $data{$_};
+  if(defined($data{text})) {
+    s{"}{-}g;
+    s{&}{+}g;
+  };
+  if($rect{top}%3){
+    $rect{top}-=$rect{top}%3;
+  };
+  if($rect{height}%3){
+    $rect{height}+=3-$rect{height}%3;
+  };
+  if($rect{left}%3){
+    $rect{left}-=$rect{left}%3;
+  };
+  if($rect{width}%3){
+    $rect{width}+=3-$rect{width}%3;
   };
   my($self)={ %data };
   $self->{rect}=TsvRect->new( \%rect );
@@ -42,22 +62,28 @@ sub from {
   my($class)=U::class(shift);
   for(@_) {
     next if(U::safe_isa($_,'TsvWord'));
-    die "???", pp($_) unless ref($_) eq "HASH";
+    die "???", U::pp($_) unless ref($_) eq "HASH";
     $_=$class->new($_);
   };
   return @_;
 };
 sub hash {
   local(@_)=@_;
+  if($_[0] eq __PACKAGE__){
+    shift;
+  };
   if(@cols) {
     local(@_)=map { @$_ } shift;
     die "col mismatch (@_ != @cols)" unless "@_" eq "@cols";
   } else {
     @cols=map { @$_ } shift;
+    @bad=grep { m{_num} } @cols;
   };
   for(@_) {
     local(@_)=@$_;
-    $_={ map { $_, shift } @cols };
+    my(%data)=map {$_,shift} @cols;
+    delete $data{$_} for @bad;
+    $_=\%data;
   };
   @_;
 };
@@ -65,8 +91,8 @@ sub fixup {
   local(*_)=shift;
   if($_[$#_] =~ m{^(account:)(.*)}){
     my($a,$b)=(hash(@_),hash(@_));
-    eex($a);
-    eex($b);
+    U::eex($a);
+    U::eex($b);
   };
   return \@_;
 };
@@ -82,16 +108,9 @@ sub parse_file {
   my(@i);
   @_=map { [split m{[\t\n]}] } $file->lines;
   @_=hash(@_);
-  for(@_){
-    $_->{text} =~ s{(account:)(.*)}{$1 $2};
-  }
   @_ = map { ref($_)eq'ARRAY'?(@$_):$_ } @_;
   @_;
 };
-sub block_num {
-  my($self)=shift;
-  $self->{block_num};
-}
 sub load_file {
   my($self)=shift;
   $self->from($self->parse_file(@_));

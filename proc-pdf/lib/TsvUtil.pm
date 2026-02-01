@@ -8,9 +8,10 @@ use File::stat qw(:FIELDS);
 use TsvRect;
 use Nobody::PP;
 use autodie;
-our(@EXPORT);
+our(@EXPORT,@EXPORT_OK);
 BEGIN {
-  @EXPORT= qw(
+  @EXPORT=qw( vsort vcmp );
+  @EXPORT_OK= qw(
 fname_parse
 group_find
 group_text
@@ -18,7 +19,6 @@ get_page_count
 pdf_to_pgs
 pdf_to_png
 png_to_tsv
-tsv_combine_files
 tsv_to_one
 older
   );
@@ -136,7 +136,7 @@ sub pdf_to_png {
   if(older($if,$of)) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
-    my(@cmd)=qw(pdftoppm -r 600 -png -singlefile $if > $of);
+    my(@cmd)=qw(pdftoppm -png -singlefile $if > $of);
     run($if,$of,@cmd);
   };
   return $of;
@@ -155,7 +155,6 @@ sub png_to_tsv {
   } else {
     my @tcmd = (
       'tesseract',
-      '-l', 'eng',
       '$if',
       "-",
       'tsv',
@@ -171,7 +170,7 @@ sub pdf_to_pgs {
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
   my($pages)=get_page_count($if);
-  for(my $pg=1;$pg<$pages;$pg++) {
+  for(my $pg=0;$pg<$pages;$pg++) {
     my($of)=path(sprintf($fmt,$if->basename(".pdf"),$pg));
     push(@_,$of);
     if(older($if,$of)) {
@@ -202,31 +201,53 @@ sub tsv_combine {
   %off=%max;
   \%off;
 };
+sub vhcmp {
+  eex( [ $a, $b ] );
+  return (
+    $a->page_num <=> $b->page_num
+      or
+    $a->top <=> $b->top
+      or
+    $a->left <=> $b->left
+  );
+};
+sub vcmp {
+  return (
+    $a->page <=> $b->page
+      or
+    $a->top <=> $b->top
+      or
+    $a->left <=> $b->left
+  );
+};
+sub vsort {
+  if(@_ == grep { U::blessed($_) } @_) {
+    return sort { vcmp } @_;
+  } elsif (@_==grep { !U::blessed($_) } @_) {
+    return sort { vhcmp } @_;
+  } else {
+    die "mixed blessed and unblessed";
+  };
+};
 sub group_find {
   local(@_)=@_;
   local(*_)=shift;
+  return unless @_;
   if($_[0]->text eq "POLLOCK"){
     return shift;
   };
-  my($blk,$bot,@word)=map { $_->block_num,$_->bottom, $_ } shift;
-  while(@_ and ($_[0]->cy)<$bot) {
-      push(@word,shift);
+  my(@word)=shift;
+  my($bot)=$word[0]->bottom;
+  my($page)=$word[0]->page;
+  while(@_ and ($_[0]->cy<$bot)) {
+    my($word)=shift;
+    push(@word,$word);
+    $bot=max($bot,$word->bottom);
   };
   @word = sort { $a->left <=> $b->left } @word;
   @word;
 };
 my(%pid);
-#    END {
-#      while(keys %pid) {
-#        my($pid)=waitpid(0,0);
-#        if($pid<1) {
-#          exit(0);
-#        };
-#        my($cmd)=delete $pid{$pid};
-#        warn "unknown child exited: $pid $?\n", next unless defined $cmd;
-#        warn "(@$cmd) exited $?";
-#      };
-#    };
 sub run {
   local(@_)=@_;
   my($if)=shift;
@@ -245,8 +266,6 @@ sub run {
   err("@_") if $verbose{cmds};
   if(my $pid=fork) {
     child_wait;
-#        push($pid{$pid}=\@_);
-#        return;
   } else {
     system("@_");
     if($?) {
