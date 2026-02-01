@@ -238,7 +238,6 @@ sub group_find {
   };
   my(@word)=shift;
   my($bot)=$word[0]->bottom;
-  my($page)=$word[0]->page;
   while(@_ and ($_[0]->cy<$bot)) {
     my($word)=shift;
     push(@word,$word);

@@ -42,9 +42,9 @@ sub from {
   @_=vsort @_;
   my(@line);
   while(@_){
-#        U::eex scalar(@_), scalar(@line);
-    push(@line,[U::group_find(\@_)]);
+    push(@line,[TsvUtil::group_find(\@_)]);
   };
+  map { TsvLine->new(@$_) } @_;
 };
 sub extra {
   local(@_)=@_;
