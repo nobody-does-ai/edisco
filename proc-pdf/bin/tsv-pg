@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Pg;
+our(@VERSION) = qw( 0 1 0 );
+sub err {
+  say STDERR "@_";
+};
+my $conn = Pg::connectdb("dbname=nn");
+die $conn->errorMessage if $conn->status ne PGRES_CONNECTION_OK;
+say $conn->status;
+my(@f);
+my $copy_sql;
+my($tsv,@tsv)=sort glob("tsv/202?-Q?-???.tsv");
+my($one)=1;
+my($count)=0;
+my($final);
+open(my $trace,">trace.pg");
+$conn->trace($trace);
+do {
+  local($_)=$tsv;
+  my($y,$q,$p)=m{tsv/(202.)-Q(.)-(...).tsv};
+  $p=0+$p;
+  my(@l)=path($tsv)->lines;
+  if($one){
+    @_=split(m{[\n\t]},shift @l);
+    for(@_){
+      $_=substr($_,0,1) if m{^(left|top|width|height)};
+      s{_num$}{};
+    };
+    $copy_sql = q{
+    COPY tsv (%s)
+    FROM STDIN
+    WITH (FORMAT text, DELIMITER E'\t', NULL '\N')
+    };
+    $copy_sql=sprintf($copy_sql,join(", ", @_));
+    my $res = $conn->exec($copy_sql);
+    die $conn->errorMessage unless $res->resultStatus == PGRES_COPY_IN;
+    $one=0;
+  } else {
+    shift(@l);
+  };
+  $conn->endcopy();
+  for(@l) {
+    ++$count;
+    $conn->putline($_);   # stream the raw TSV line
+  };
+} while defined($tsv=shift(@tsv));
+$conn->putline("\\.");           # signal EOF
+while(defined($final=$conn->getResult)) {
+  say "count=$count";
+  say($final->ntuples);
+};
+eex($conn->errorMessage);
