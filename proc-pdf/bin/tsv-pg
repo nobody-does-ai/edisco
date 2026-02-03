@@ -1,60 +1,61 @@
 #!/usr/bin/perl
-# vim: ts=2 sw=2 ft=perl
-eval 'exec perl -x -wS $0 ${1+"$@"}'
-if 0;
-$|++;
 use common::sense;
 use autodie;
+use DBI;
+use DBD::Pg qw(:pg_types); # Required for PGRES constants if needed
 use Nobody::Util;
 use Nobody::PP;
-use Pg;
+
+$|++;
+
 our(@VERSION) = qw( 0 1 0 );
-sub err {
-  say STDERR "@_";
-};
-my $conn = Pg::connectdb("dbname=nn");
-die $conn->errorMessage if $conn->status ne PGRES_CONNECTION_OK;
-say $conn->status;
-my(@f);
-my $copy_sql;
-my($tsv,@tsv)=sort glob("tsv/202?-Q?-???.tsv");
-my($one)=1;
-my($count)=0;
-my($final);
-open(my $trace,">trace.pg");
-$conn->trace($trace);
-do {
-  local($_)=$tsv;
-  my($y,$q,$p)=m{tsv/(202.)-Q(.)-(...).tsv};
-  $p=0+$p;
-  my(@l)=path($tsv)->lines;
-  if($one){
-    @_=split(m{[\n\t]},shift @l);
-    for(@_){
-      $_=substr($_,0,1) if m{^(left|top|width|height)};
+
+# 1. Establish DBI connection
+my $dsn = "dbi:Pg:dbname=nn";
+my $dbh = DBI->connect($dsn, "", "", { 
+  AutoCommit => 1, 
+  RaiseError => 1, 
+  PrintError => 0 
+});
+
+my($tsv, @tsv) = sort glob("tsv/202?-Q?-???.tsv");
+my $count = 0;
+my $one = 1;
+
+# Optional: Trace equivalent in DBI
+# $dbh->trace(2, "trace.pg");
+
+foreach my $file ($tsv, @tsv) {
+  my @l = path($file)->lines;
+  
+  if ($one) {
+    # Extract headers from the first file
+    my $header_line = shift @l;
+    my @headers = split(m{[\n\t]}, $header_line);
+    
+    for (@headers) {
+      $_ = substr($_, 0, 1) if m{^(left|top|width|height)};
       s{_num$}{};
-    };
-    $copy_sql = q{
-    COPY tsv (%s)
-    FROM STDIN
-    WITH (FORMAT text, DELIMITER E'\t', NULL '\N')
-    };
-    $copy_sql=sprintf($copy_sql,join(", ", @_));
-    my $res = $conn->exec($copy_sql);
-    die $conn->errorMessage unless $res->resultStatus == PGRES_COPY_IN;
-    $one=0;
+    }
+
+    # 2. Start the COPY process
+    my $columns = join(", ", @headers);
+    $dbh->do("COPY tsv ($columns) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')");
+    $one = 0;
   } else {
-    shift(@l);
-  };
-  $conn->endcopy();
-  for(@l) {
-    ++$count;
-    $conn->putline($_);   # stream the raw TSV line
-  };
-} while defined($tsv=shift(@tsv));
-$conn->putline("\\.");           # signal EOF
-while(defined($final=$conn->getResult)) {
-  say "count=$count";
-  say($final->ntuples);
-};
-eex($conn->errorMessage);
+    shift @l; # Skip header for subsequent files
+  }
+
+  # 3. Stream data using pg_putcopydata
+  foreach (@l) {
+    $count++;
+    $dbh->pg_putcopydata($_); 
+  }
+}
+
+# 4. Finalize the COPY operation
+$dbh->pg_putcopyend();
+
+say "Total rows processed: $count";
+
+$dbh->disconnect;

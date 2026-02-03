@@ -1,0 +1,17 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+
+my (%test) = %{{ a=>'b' }};
+my (@test) = ( a=>'b' );
+eex(\%test);
+eex( flatten(\%test) );
+eex( flatten(\@test) );
+eex( flatten( qw( a b ) ));
