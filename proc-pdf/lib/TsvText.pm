@@ -19,9 +19,9 @@ BEGIN {
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
 };
-#    use overload (
-#      q{""}    => 'tostring',
-#    );
+use overload (
+  q{""}    => 'tostring',
+);
 sub rect {
   my($self)=$_[0];
   $self->{rect};
@@ -55,22 +55,14 @@ sub top {
 sub bottom {
   shift->rect->bottom(@_);
 }
-sub new {
-  local(@_)=@_;
-  my($class)=ref($_[0])?$_[0]:shift;
-  my($word)=shift;
-  my(%data)=%$word;
-  $data{text}=[$word];
-  push(@{$data{text}},@_);
-  my($self)=\%data;
-  bless($self,$class);
-  $self->pack;
-  $self;
-};
 sub pack {
   my($self)=$_[0];
-  $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->{words}}); 
+  $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->word}); 
 }
+sub tostring {
+  my($self)=shift;
+  return join(" || ","",$self->top,$self->text,$self->bottom);
+};
 sub from {
   local(@_)=splice(@_);;
   my($class)=U::class(shift);
@@ -80,6 +72,9 @@ sub from {
     push(@line,TsvLine->new(U::group_find(\@_)));
   };
   @line;
+};
+sub page {
+  return shift->{page};
 };
 sub word {
   my($self)=$_[0];

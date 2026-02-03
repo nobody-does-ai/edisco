@@ -112,7 +112,8 @@ sub tsv_to_one {
   return $otsv unless keys %older;
   for(@itsv) {
     say STDERR "$_ => $otsv";
-    local(@_)=TsvWord->parse_file($_);
+    local(@_)=$_->lines;
+    @_=TsvWord->parse_lines(@_);
     for my $tsv(@_) {
       for my $key(keys %max) {
         $tsv->{$key}+=$off{$key};

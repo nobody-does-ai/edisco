@@ -6,42 +6,34 @@ use base 'Exporter';
 
 sub slice_y {
   my ($im, $c, $y1, $y2) = @_;
-
-  ($y1,$y2)=(min($y1,$y2),max($y1,$y2));
-  die "slice_y: empty slice (y1=$y y2=$h)" if $y2==$y1;
-
-  my $out = GD::Image->new($im->width+12, ($y2-$y1)+12);
-  my $color = $c?$out->colorAllocate(255,0,0):$out->colorAllocate(0,0,0);
-  $out->filledRectangle(0, 0, $out->width, $out->height, $color);
-
-  my($dstx,$dsty)=(6,6);
-  my($srcx,$srcy)=(0,$y1+6);
-  my($wid,$hig)=($im->width,$y2-$y1);
-  $out->copy($im, $dstx,$dsty,$srcx,$srcy,$wid,$hig);
-  return $out;
+  die "slice_y: empty slice (y1=$y1 y2=$y2)" unless $y2>$y1;
+  my($w)=$im->width;
+  my($h)=($y2-$y1);
+  
+  my $r = GD::Image->new($w,$h,1);
+  $r->copy($im,0,0,0,$y1,$w,$h);
+  return $r;
 }
 
 sub stack_slices {
-  my (@slices) = @_;
-  die "stack_slices: need at least one slice" unless @slices;
-
-  my $w = $slices[0]->width;
-  my $total_h = 0;
-  for my $s (@slices) {
-    $w=$s->width unless $s->width == $w;
-    $total_h += $s->height;
-  }
-
-  my $out = GD::Image->new($w, $total_h);
-  my $white = $out->colorAllocate(255,255,255);
-  $out->filledRectangle(0, 0, $w-1, $total_h-1, $white);
-
+  local (@_) = @_;
+  die "stack_slices: need at least one slice" unless @_;
+  my($dx,$sy)=(0,0);
+  my($sx,$sy)=(0,0);
+  my $w = max(map{$_->width}@_);
+  my $h = sum(map{$_->height}@_);
+  my $r = GD::Image->new($w, $h, 1);
+  my ($col)=$r->colorAllocate(255,255,255);
+  $r->filledRectangle(0,0,$w,$h,$col);
+  ($col)=$r->colorAllocate(0,255,255);
+  $r->filledRectangle(0,0,$w,40,$col);
+  ($col)=$r->colorAllocate(0,255,0);
+  $r->filledRectangle(0,40,$w,80,$col);
   my $y = 0;
-  for my $s (@slices) {
-    $out->copy($s, 0, $y, 0, 0, $s->width, $s->height);
-    $y += $s->height;
-  }
-
-  return $out;
+  for(@_) {
+    $r->copy( $_,  0,$y,   0,0,   $_->width,$_->height);
+    $y+=$_->height;
+  };
+  return $r;
 }
 1;

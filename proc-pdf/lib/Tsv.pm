@@ -9,10 +9,15 @@ BEGIN {
   use TsvUtil;
 };
 our($DEBUG)=0;
+{
+  package IndirectHash;
+};
+my @rect=qw( top left width height );
 sub new {
   local(@_)=@_;
+  #U::eex(\@_);
   my($class)=U::class(shift);
-  my($self)=(ref($_[$#_]) eq 'HASH')?pop:{};
+  my($self)={U::flatten(@_)};
   bless($self,$class);
   $self;
 };

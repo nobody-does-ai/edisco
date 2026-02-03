@@ -20,15 +20,6 @@ BEGIN {
   undef &head;
 };
 my(@word);
-#    BEGIN {
-#      for( qw( page par line word block ) ) {
-#        eval sprintf("sub %s { shift->{%s}; };\n", $_, $_."_num");
-#        eval sprintf("sub %s { shift->{%s}; };\n", $_."_num", $_."_num");
-#      };
-#      for( qw( conf ) ) {
-#        eval sprintf("sub %s { shift->{%s}; };\n", $_, $_);
-#      };
-#    };
 sub new {
   local(@_)=@_;
   my($class)=U::class(shift);
@@ -40,6 +31,8 @@ sub new {
   if(defined($data{text})) {
     s{"}{-}g;
     s{&}{+}g;
+  } else {
+    $data{text}="<UNDEFINED>";
   };
   if($rect{top}%3){
     $rect{top}-=$rect{top}%3;
@@ -105,8 +98,12 @@ sub parse_file {
   local(@_)=@_;
   my($class,$file)=@_;
   $file=U::path($file) unless ref($file);
-  my(@i);
-  @_=map { [split m{[\t\n]}] } $file->lines;
+  local(@_)=$file->lines;
+  parse_lines(@_);
+}
+sub parse_lines {
+  shift if $_[0]->isa(__PACKAGE__);
+  @_=map { [split m{[\t\n]}] } grep { m{^[5l]} } @_;
   @_=hash(@_);
   @_ = map { ref($_)eq'ARRAY'?(@$_):$_ } @_;
   @_;
@@ -114,6 +111,9 @@ sub parse_file {
 sub load_file {
   my($self)=shift;
   $self->from($self->parse_file(@_));
+};
+sub word {
+  return [ shift ];
 };
 sub text {
   return shift->{text};

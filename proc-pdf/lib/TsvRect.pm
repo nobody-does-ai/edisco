@@ -15,47 +15,41 @@ our(%key);
 our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
-our(@prim,@head,%head);
-BEGIN {
+our(@prim,@head);
+INIT {
   @head=qw( top left width height );
-  $_=1 for @head{+@head};
+  @prim = ( "x1 l left", "x2 r right", "y1 t top", "y2 b bottom" );
+  for(@prim) {
+    my(@s)=split;
+    my($s)=$s[0];
+    for(@s) {
+      $key{$_}=$s for@s;
+      $key{$s}=$s;
+    };
+  };
+  $key{$_}="dx" for qw( w width dx );
+  $key{$_}="dy" for qw( h height dy );
 };
 sub dx {
+  die "usage: \$r->dx" unless @_==1;
   my($self)=shift;
-  if(@_) {
-    my($odx)=$self->dx;
-    my($ndx)=shift;
-    my($cdx)=($odx-$ndx); 
-    my($ox1,$ox2,$nx1,$nx2);
-    $ox1=$self->x1;
-    $ox2=$self->x2;
-    $nx1=$ox1+$cdx/2;
-    $nx2=$ox2-$cdx/2;
-  };
-  return $self->{x2}-$self->{x1};
+  $DB::single++ if $DEBUG;
+  return $self->x2-$self->x1;
 };
 sub dy {
+  die "usage: \$r->dy" unless @_==1;
   my($self)=shift;
-  if(@_) {
-    my($new)=0.5*shift;
-    $new=-$new if $new<0;
-    my($avg)=0.5*($self->{y1}+$self->{y2});
-    $self->{y1}=int($avg-$new);
-    $self->{y2}=int($avg+$new);
-  };
-  return $self->{y2}-$self->{y1};
+  $DB::single++ if $DEBUG; return $self->y2-$self->y1;
 };
 sub be_defined {
   my($self)=shift;
   my($v)=shift;
   return $v if defined $v;
-  die "not defined";
+  die "not defined ($self,$v)";
 };
 sub x1 {
   my($self)=shift;
-  die unless $self->isa("TsvRect");
   die "not a setter" if @_;
-  $self->{x1}=shift if @_;
   $self->be_defined( $self->{x1} );
 };
 
@@ -63,7 +57,6 @@ sub x2 {
   my($self)=shift;
   die "not a setter" if @_;
   $self->{x2}=shift if @_;
-  $self->{x2};
   $self->be_defined( $self->{x2} );
 };
 
@@ -71,7 +64,6 @@ sub y1 {
   my($self)=shift;
   die "not a setter" if @_;
   $self->{y1}=shift if @_;
-  $self->{y1};
   $self->be_defined( $self->{y1} );
 };
 
@@ -83,31 +75,20 @@ sub y2 {
 };
 
 BEGIN {
-  @prim = ( "x1 l left", "x2 r right", "y1 t top", "y2 b bottom" );
-  for(@prim) {
-    my(@s)=split;
-    my($s)=$s[0];
-    for(@s) {
-      $key{$_}=$s for@s;
-      $key{$s}=$s;
-    };
-  };
   *l=\&x1; *left=\&x1;
   *r=\&x2; *right=\&x2;
   *t=\&y1; *top=\&y1;
   *b=\&y2; *bottom=\&y2;
 };
 BEGIN {
-  $key{$_}="dx" for qw( w width dx );
-  $key{$_}="dy" for qw( h height dy );
   *w=\&dx; *width=\&dx;
   *h=\&dy; *height=\&dy;
 };
 sub new {
   local(@_)=@_;
+  my($save)=U::pp(\@_);
   my($class)=U::class(shift);
-  @_ = map { (ref eq 'ARRAY')?(@$_):($_) } @_;
-  @_ = map { (ref eq 'HASH') ? %$_ : $_ } @_;
+  @_ = U::flatten(@_);
   @_ = map { $key{$_} or $_ } @_;
   my(%tmp)=@_;
   for( [ qw(dx x1 x2) ], [ qw(dy y1 y2) ] ) {
@@ -135,36 +116,32 @@ sub nsort {
   return sort { $a <=> $b } @_;
 };
 sub union {
-  local(@_)=grep{defined}@_;
-  my($self)=$_[0];
-  shift unless ref($self);
-  my(@v,@h);
-  @_=map { $_->rect } @_;
-  for(@_) {
-    unless(defined($_->{x1})){
-      U::confess(U::pp($self,\@v,\@h,\@_));
-    };
-    push(@h,$_->left,$_->right);
-    push(@v,$_->top,$_->bottom);
+  my($class)=shift;
+  if(ref($class)){
+    TsvRect->union($class,@_);
+  } else {
+    my(%rect);
+    $rect{x1}=U::min(map{$_->x1}grep{defined}@_);
+    $rect{y1}=U::min(map{$_->y1}grep{defined}@_);
+
+    $rect{x2}=U::max(map{$_->x2}grep{defined}@_);
+    $rect{y2}=U::max(map{$_->y2}grep{defined}@_);
+
+    bless(\%rect,$class);
   };
-  @h=nsort(@h);
-  @v=nsort(@v);
-  return TsvRect->new({ 
-      left=>shift @h, top=>shift @v, right=>pop @h, bottom=>pop @v 
-    });
 };
 sub rect {
   return shift;
 };
 sub cy {
   die "usage: \$r->cy" unless @_==1;
-  return int(U::sum(map { $_[0]->$_ } qw(y1 y2))/2); 
+  my($self)=shift;
+  int(($self->y1+$self->y2)/2);
 };
 sub cx {
-  local(@_)=@_;
-  die "usage: \$r->cx" unless @_==1;
+  die "usage: \$r->cy" unless @_==1;
   my($self)=shift;
-  (U::sum(map { $self->$_ } qw(x1 x2))/2); 
+  int(($self->x1+$self->x2)/2);
 };
 use overload (
   q{""}    => 'tostring',

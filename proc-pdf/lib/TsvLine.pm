@@ -18,21 +18,26 @@ sub vsort;
 *vsort=\&U::vsort;
 sub new {
   local(@_)=@_;
-  my($class)=ref($_[0])?$_[0]:shift;
-  my($word)=shift;
-  my(%data)=%$word;
-  $data{text}=[$word];
-  push(@{$data{text}},@_);
-  my($self)=\%data;
-  bless($self,$class);
+  my($class)=shift;
+  my(@word)=map { U::safe_isa($_[$_],'TsvWord')?delete($_[$_]):() } 0 .. $#_;
+  my($self)=$class->SUPER::new(@_);
+  $self->{text}=\@word;
+  #U::eex($self->word);
+  #U::eex($self);
+  #U::eex($self);
   $self->pack;
   $self;
 };
 sub pack {
   my($self)=$_[0];
-  $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->{text}}); 
-  my $TEXT=join(" ", map { $_->text } @{$self->word});
-  $self->{TEXT}=$TEXT;
+  #  U::eex($self);
+  $self->{rect}=TsvRect->union(
+    map { U::safe_can($_,'rect') ? $_->rect : $_ }
+    ($self->{rect}, @{$self->{text}})
+  ); 
+  #  for(@{$self->word}){
+  #  U::eex $_;
+  #};
   $self->{rect};
 }
 sub from {
@@ -42,9 +47,10 @@ sub from {
   @_=vsort @_;
   my(@line);
   while(@_){
-    push(@line,[TsvUtil::group_find(\@_)]);
+    my(@tmp)=TsvUtil::group_find(\@_);
+    push(@line,TsvLine->new(@tmp));
   };
-  map { TsvLine->new(@$_) } @_;
+  @line;
 };
 sub extra {
   local(@_)=@_;
@@ -56,19 +62,16 @@ sub extra {
   };
   $width;
 };
-sub word {
-  my($self)=$_[0];
-  my($text)=$self->{text};
-  return (defined ? $text->[$_] : $text) for $_[1];
-};
 sub load_file {
   my($self)=shift;
-  $self->from($self->parse_file(@_));
+  my(@word)=TsvWord->load_file(@_);
+  my(@line)=TsvLine->from(@word);
+  @line;
 };
 sub text {
   my($self)=$_[0];
   if(defined($_[1])) {
-    return $self->word($_[1])->text;
+    return map { $_->text } grep { defined } $self->word($_[1]);
   } else {
     local(@_)=map { ref($_)?$_->text:$_ } @{$self->{text}};
     return join("\n    ",split(" \n ",join(" ",@_)));
