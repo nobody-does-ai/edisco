@@ -128,8 +128,8 @@ sub flatten(@);
 sub flatten(@){
   return map { flatten($_) } @_ unless @_==1;
   local($_)=shift;
-  return flatten(@$_) if reftype($_) eq 'ARRAY';
-  return flatten(%$_) if reftype($_) eq 'HASH';
+  return flatten(@$_) if ref($_) eq 'ARRAY';
+  return flatten(%$_) if ref($_) eq 'HASH';
   return $_;
 }
 #    sub recall {

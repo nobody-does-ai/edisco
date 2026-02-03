@@ -137,7 +137,7 @@ BEGIN {
 };
 package Nobody::Util::Import;
 our(@ISA);
-@ISA=@ISA=qw(isa);
+@ISA=@ISA=qw();
 close(DATA);
 1;
 __DATA__

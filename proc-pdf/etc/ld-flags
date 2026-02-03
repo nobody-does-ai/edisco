@@ -1,0 +1,6 @@
+-static
+-Wl,--verbose
+-L/home/nn/lib
+-L/usr/lib/postgresql/15/lib
+-ggdb3
+-g

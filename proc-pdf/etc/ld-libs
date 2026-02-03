@@ -1,0 +1,6 @@
+-lpqxx
+-lpq
+-lcrypto
+-lssl
+-lpgport
+-lpgcommon
