@@ -45,7 +45,8 @@ sub be_defined {
   my($self)=shift;
   my($v)=shift;
   return $v if defined $v;
-  die "not defined ($self,$v)";
+  my($text)=U::pp({%{$self}});
+  die "not defined ($text,$v)";
 };
 sub x1 {
   my($self)=shift;
@@ -110,7 +111,21 @@ sub new {
   };
   my($self)={%tmp};
   bless($self,$class);
+  $self->be_defined($self,$self->{$_}) for keys %$self;
   $self;
+};
+sub take_data {
+  my($class)=U::class(shift);
+  my($hash)=shift;
+  my(%hash);
+  for(keys %$hash) {
+    my($rep)=$key{$_};
+    next unless defined $rep;
+    $hash{$rep}=delete $hash->{$_};
+  };
+  return () unless keys %hash;
+  die "could not find stuff" unless keys(%hash)==4;
+  $class->new(\%hash);
 };
 sub nsort {
   return sort { $a <=> $b } @_;

@@ -43,7 +43,11 @@ sub pack {
 sub from {
   local(@_)=@_;
   my($class)=U::class(shift);
-  @_=grep { defined and $_->level == 5 } @_;
+  my(%ref);
+  for(map { ref } @_ ){
+    $ref{$_}++;
+  };
+  @_=grep { defined and  $_->level == 5 } @_;
   @_=vsort @_;
   my(@line);
   while(@_){

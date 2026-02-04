@@ -22,6 +22,12 @@ BEGIN {
 use overload (
   q{""}    => 'tostring',
 );
+sub new {
+  say STDERR ("new(",U::pp(\@_),")");
+  my($self)= $_[0]->SUPER::new(@_[1..$#_]);
+  die "no rect" unless defined $self->{rect};
+  $self;
+};
 sub rect {
   my($self)=$_[0];
   $self->{rect};

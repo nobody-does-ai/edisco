@@ -14,40 +14,23 @@ use common::sense;
 };
 use TsvText;
 our(@ISA)=qw(TsvText);
-our(@cols,@bad);
+our(@cols,@bad,%map);
 BEGIN {
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
 };
 my(@word);
+
 sub new {
   local(@_)=@_;
   my($class)=U::class(shift);
-  my(%data)=map { %$_ } shift;
-  my(%rect);
-  for(qw(left top width height)){
-    $rect{$_}=delete$data{$_};
-  };
-  if(defined($data{text})) {
-    s{"}{-}g;
-    s{&}{+}g;
-  } else {
-    $data{text}="<UNDEFINED>";
-  };
-  if($rect{top}%3){
-    $rect{top}-=$rect{top}%3;
-  };
-  if($rect{height}%3){
-    $rect{height}+=3-$rect{height}%3;
-  };
-  if($rect{left}%3){
-    $rect{left}-=$rect{left}%3;
-  };
-  if($rect{width}%3){
-    $rect{width}+=3-$rect{width}%3;
-  };
-  my($self)={ %data };
-  $self->{rect}=TsvRect->new( \%rect );
+  my($self)=shift;
+  my($rect)=TsvRect->take_data($self);
+  $self=$class->SUPER::new(rect=>$rect,$self);
+#      my(%data)=map { %$_ } shift;
+#      my($rect)=TsvRect->take_data(\%data);
+#      my($self)={ %data };
+#      $self->{rect}=$rect;
   bless($self,$class);
 };
 sub from {
@@ -55,10 +38,18 @@ sub from {
   my($class)=U::class(shift);
   for(@_) {
     next if(U::safe_isa($_,'TsvWord'));
-    die "???", U::pp($_) unless ref($_) eq "HASH";
+    die "Expected hash, got: ", U::pp($_) unless ref($_) eq "HASH";
     $_=$class->new($_);
   };
   return @_;
+};
+BEGIN {
+  for( qw( page block par line word ) ) {
+    $map{$_."_num"}=$_;
+  };
+  for(values %map) {
+    $map{$_}=$_;
+  };
 };
 sub hash {
   local(@_)=@_;
@@ -66,7 +57,7 @@ sub hash {
     shift;
   };
   if(@cols) {
-    local(@_)=map { @$_ } shift;
+    local(@_)=map { $map{$_} } map { @$_ } shift;
     die "col mismatch (@_ != @cols)" unless "@_" eq "@cols";
   } else {
     @cols=map { @$_ } shift;

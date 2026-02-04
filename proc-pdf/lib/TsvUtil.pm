@@ -205,11 +205,11 @@ sub tsv_combine {
 sub vhcmp {
   eex( [ $a, $b ] );
   return (
-    $a->page_num <=> $b->page_num
+    $a->{page_num} <=> $b->{page_num}
       or
-    $a->top <=> $b->top
+    $a->{top} <=> $b->{top}
       or
-    $a->left <=> $b->left
+    $a->{left} <=> $b->{left}
   );
 };
 sub vcmp {

@@ -1,0 +1,127 @@
+#!/usr/bin/perl
+use common::sense;
+use autodie;
+use TsvWord;
+BEGIN {
+  package U;
+  use Nobody::Util;
+};
+BEGIN {
+  *eex=*U::eex;
+  *TsvWord::eex=*U::eex;
+};
+BEGIN {
+  my(@cols)=qw(level page block par line word left top width height conf text );
+};
+use DBI;
+use Time::HiRes qw(sleep );
+use DBD::Pg qw(:pg_types); # Required for PGRES constants if needed
+use Nobody::Util;
+use Nobody::PP;
+use TsvDB;
+use GD::Image;
+
+our($img,$red,$whi,$blk,$grn,$blu);
+$|++;
+
+sub draw_rect;
+sub make_image;
+our(@VERSION) = qw( 0 1 0 );
+my(@tsv)=fetch_lines;
+my($ifile)=path("image.png");
+$ifile->remove;
+my(%ref);
+our(%page);
+*page=page;
+my($i)=0;
+my(%todo);
+$todo{$_}++ for map { ref } @tsv;
+for(@{$tsv[6]}){
+  if($_->{text} eq "INVESTMENTS") {
+    push(@{$todo{$_->{page}}},$_);
+  };
+};
+my(@todo);
+@_ = keys %todo;
+while(@_){
+  push(@todo,splice(@_,rand(@_),1));
+};
+my $font="/usr/share/fonts/truetype/fantasque-sans/LargeLineHeight/TTF/FantasqueSansMono-Bold.ttf";
+$img=make_image($tsv[1][0]);
+eex(\@tsv);
+exit(0);
+for($tsv[2][0],@{$tsv[6]}) {
+  eex($_);
+  next unless $_->{page} == $todo[0];
+  draw_rect($img,$_,$red,$blu,$whi);
+};
+$ifile->spew($img->png);
+system("xdg-open $ifile");
+sub make_image {
+  my($page)=shift;
+  ($img)=GD::Image->new($page->{w},$page->{h},1);
+  ($whi)=$img->colorAllocate(255,255,255);
+  ($blk)=$img->colorAllocate(0,0,0);
+  ($red)=$img->colorAllocate(255,0,0);
+  ($grn)=$img->colorAllocate(0,255,0);
+  ($blu)=$img->colorAllocate(0,0,255);
+  $img->filledRectangle(0,0,$img->width,$img->height,$red);
+  my($w)=$img->width;
+  my($h)=$img->height;
+  for(my $i=0;$i<5;$i++) {
+    for(my $j=0;$j<5;$j++) {
+      my($pos)=5*$i+$j;
+      $img->rectangle($pos,$pos,$w-$pos,$h-$pos,$i%2?$whi:$blk);
+    };
+  };
+  draw_rect($img,$page,$grn,$whi,$blu);
+  return $img;
+}
+my(@level);
+BEGIN {
+  @level=qw( undef page block par line word );
+}
+sub draw_rect {
+  my($img,$tsv,$rcol,$tcol,$bcol)=@_;
+  eex($tsv,$rcol,$tcol,$bcol);
+  my($x1,$dx,$y1,$dy)=map { $tsv->{$_} } map { substr($_,0,1) } qw(left width top height);
+  my($x2)=$x1+$dx;
+  my($y2)=$y1+$dy;
+  my($level)=$tsv->{level};
+  eex($x1,$y1,$x2,$y2);
+  eex($level);
+  if($level==1) {
+    $x1+=50;
+    $y1+=50;
+    $x2-=50;
+    $y2-=50;
+    eex($x1,$y1,$x2,$y2);
+  };
+  eex($img->filledRectangle($x1,$y1,$x2,$y2,$rcol));
+  my($text);
+  $text//=$tsv->{text};
+  eex($level);
+  $level=$level[$level];
+  eex($level);
+  $text=length($text)?$text:join(" - ", $level, $tsv->{$level});
+  eex($text);
+  my($size)=10;
+  if(defined($text)){
+    $text="FUCK" unless length($text);
+    my(@r)=$img->stringFT($tcol,$font,$size,0,$x1+5,$y1+5+15,$text);
+    eex(@r);
+    {
+      my(@x)=($r[0],$r[2],$r[4],$r[6]);
+      shift(@r);
+      my(@y)=($r[0],$r[2],$r[4],$r[6]);
+      my $x1=min(@x)-5;
+      my $x2=max(@x)+5;
+      my $y1=min(@y)-5;
+      my $y2=max(@y)+5;
+      eex($img->filledRectangle($x1,$y1,$x2,$y2,$bcol));
+    };
+    my(@r)=$img->stringFT($tcol,$font,$size,0,$x1+5,$y1+5+15,$text);
+    eex(@r);
+  };
+  return $img;
+};

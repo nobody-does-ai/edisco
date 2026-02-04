@@ -2,60 +2,39 @@
 use common::sense;
 use autodie;
 use DBI;
+use Time::HiRes qw(sleep );
 use DBD::Pg qw(:pg_types); # Required for PGRES constants if needed
 use Nobody::Util;
 use Nobody::PP;
+use TsvDB;
 
 $|++;
 
 our(@VERSION) = qw( 0 1 0 );
 
-# 1. Establish DBI connection
-my $dsn = "dbi:Pg:dbname=nn";
-my $dbh = DBI->connect($dsn, "", "", { 
-  AutoCommit => 1, 
-  RaiseError => 1, 
-  PrintError => 0 
-});
+my(@tsv)=map { path($_) } sort glob("tsv/*-???.tsv");
+use Path::Tiny;
+{
+  my(@all);
+  for my $page(values %{page()}) {
+    my($lpage)=$page->{id};
+    $page=$page->{name};
+    my($file)=path("tsv")->child($page);
+    my(@lines)=grep { m{^[0-5]} } $file->lines;
+    for(@lines) {
+      chomp;
+      local(@_)=split(m{\t});
+      $_[1]=$lpage;
+      push(@_,undef) while(@_<12);
+      $_=join("\t",@_)."\n";
+    };
+    push(@all,@lines);
+  };
 
-my($tsv, @tsv) = sort glob("tsv/202?-Q?-???.tsv");
-my $count = 0;
-my $one = 1;
-
-# Optional: Trace equivalent in DBI
-# $dbh->trace(2, "trace.pg");
-
-foreach my $file ($tsv, @tsv) {
-  my @l = path($file)->lines;
-  
-  if ($one) {
-    # Extract headers from the first file
-    my $header_line = shift @l;
-    my @headers = split(m{[\n\t]}, $header_line);
-    
-    for (@headers) {
-      $_ = substr($_, 0, 1) if m{^(left|top|width|height)};
-      s{_num$}{};
-    }
-
-    # 2. Start the COPY process
-    my $columns = join(", ", @headers);
-    $dbh->do("COPY tsv ($columns) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')");
-    $one = 0;
-  } else {
-    shift @l; # Skip header for subsequent files
-  }
-
-  # 3. Stream data using pg_putcopydata
-  foreach (@l) {
-    $count++;
-    $dbh->pg_putcopydata($_); 
-  }
-}
-
-# 4. Finalize the COPY operation
-$dbh->pg_putcopyend();
-
-say "Total rows processed: $count";
-
-$dbh->disconnect;
+  eex( dbh->selectall_array( "select count(*) from tsv" ) );
+  dbh->do("delete from tsv");
+  eex( dbh->selectall_array( "select count(*) from tsv" ) );
+  ins_tsv(@all);
+  eex( dbh->selectall_array( "select count(*) from tsv" ) );
+};
+dbh->disconnect;
