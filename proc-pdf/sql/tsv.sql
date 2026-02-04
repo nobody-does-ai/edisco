@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jyVmQkZ80c7U6h85KqxeWrtqzAD4NUvteVX27aq8HTLPNkYFe9QPc5hFGvBiqkH
+\restrict j92tfZ6Li4aMe7sfBDKHg5MExjNpae8DoktlK6WrIgG8WBvWJbRWOFWfRggJWuh
 
 -- Dumped from database version 15.15 (Debian 15.15-0+deb12u1)
 -- Dumped by pg_dump version 15.15 (Debian 15.15-0+deb12u1)
@@ -70,7 +70,7 @@ CREATE FUNCTION public.tsv_id(r public.tsv_raw) RETURNS bigint
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     AS $$
     -- Use dot notation to access fields from the row argument 'r'
-    SELECT (r.page::bigint - 2020000) * 10000000000 + r.l * 1000000 + r.t * 10 + r.level
+    SELECT (r.page::bigint - 2020000) * 10000000000 + r.t * 1000000 + r.l * 10 + r.level
 $$;
 
 
@@ -81,7 +81,7 @@ ALTER FUNCTION public.tsv_id(r public.tsv_raw) OWNER TO nn;
 --
 
 CREATE VIEW public.tsv AS
- SELECT ((((((((tsv_raw.page)::bigint - 2020000) * 100000) * 100000) * 10) + ((tsv_raw.l * 100000) * 10)) + (tsv_raw.t * 10)) + tsv_raw.level) AS tsv,
+ SELECT public.tsv_id(tsv_raw.*) AS tsv,
     tsv_raw.level,
     tsv_raw.page,
     tsv_raw.block,
@@ -225,5 +225,5 @@ CREATE INDEX idx_tsv_synthetic_id ON public.tsv_raw USING btree ((((((((((page):
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jyVmQkZ80c7U6h85KqxeWrtqzAD4NUvteVX27aq8HTLPNkYFe9QPc5hFGvBiqkH
+\unrestrict j92tfZ6Li4aMe7sfBDKHg5MExjNpae8DoktlK6WrIgG8WBvWJbRWOFWfRggJWuh
 
