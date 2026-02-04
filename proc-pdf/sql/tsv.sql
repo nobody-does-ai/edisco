@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict j92tfZ6Li4aMe7sfBDKHg5MExjNpae8DoktlK6WrIgG8WBvWJbRWOFWfRggJWuh
+\restrict J4hIngxooWZcdXOGzGVhpI7QFRGdOeXJtuE7K06b2OhdC09tMFtopVcDwErvPh0
 
 -- Dumped from database version 15.15 (Debian 15.15-0+deb12u1)
 -- Dumped by pg_dump version 15.15 (Debian 15.15-0+deb12u1)
@@ -200,6 +200,58 @@ CREATE VIEW public.tsv_id AS
 ALTER TABLE public.tsv_id OWNER TO nn;
 
 --
+-- Name: tsv_section; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_section AS
+ SELECT section.tsv0,
+    section.tsvn,
+    tsv.tsv,
+    tsv.level,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.l,
+    tsv.t,
+    tsv.w,
+    tsv.h,
+    tsv.conf,
+    tsv.text
+   FROM public.section,
+    public.tsv
+  WHERE ((section.tsv0 <= tsv.tsv) AND (section.tsvn >= tsv.tsv));
+
+
+ALTER TABLE public.tsv_section OWNER TO nn;
+
+--
+-- Name: tsvp; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsvp AS
+ SELECT public.tsv_id(tsv_raw.*) AS tsv,
+    tsv_raw.level,
+    tsv_raw.page,
+    tsv_raw.block,
+    tsv_raw.par,
+    tsv_raw.line,
+    tsv_raw.word,
+    tsv_raw.l,
+    tsv_raw.t,
+    tsv_raw.w,
+    tsv_raw.h,
+    (tsv_raw.l + tsv_raw.w) AS r,
+    (tsv_raw.t + tsv_raw.h) AS b,
+    tsv_raw.conf,
+    tsv_raw.text
+   FROM public.tsv_raw;
+
+
+ALTER TABLE public.tsvp OWNER TO nn;
+
+--
 -- Name: tsv_raw tsv_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
 --
 
@@ -225,5 +277,5 @@ CREATE INDEX idx_tsv_synthetic_id ON public.tsv_raw USING btree ((((((((((page):
 -- PostgreSQL database dump complete
 --
 
-\unrestrict j92tfZ6Li4aMe7sfBDKHg5MExjNpae8DoktlK6WrIgG8WBvWJbRWOFWfRggJWuh
+\unrestrict J4hIngxooWZcdXOGzGVhpI7QFRGdOeXJtuE7K06b2OhdC09tMFtopVcDwErvPh0
 
