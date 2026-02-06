@@ -7,6 +7,7 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use Nobody::PP;
+use TsvDB;
 use GD::Image;
 use GDUtil;
 our(@VERSION) = qw( 0 1 0 );
@@ -17,71 +18,11 @@ exit(0);
 use TsvLine;
 my(%tgt);
 my(@inv,@trn);
-open(STDERR,">&STDOUT");
 $|++;
 
-
-BEGIN {
-  $tgt{INVESTMENTS}=\@inv;
-  $tgt{TRANSACTIONS}=\@trn;
-  $tgt{Page}=1;
-  $tgt{INSURED}=1;
-  $tgt{POLLOCK}=\@inv;
-  $tgt{KEY}=1;
-  $tgt{ACTIVITY}=1;
-};
-sub build_parent_png {
-  my($t)=path(shift);
-  my($b)=join("","png/",$t->basename(".tsv"));
-  my($p)=path("$b.png");
-  unless( $p->exists ) {
-    my(@c)=sort glob("$b-[0-9][0-9][0-9].png");
-    for(@c){
-      #eex($_);
-      $_=GD::Image->newFromPng($_,1);
-    };
-    my($r)=GDUtil::stack_slices(@c);
-    eex $p->touchpath->spew($r->png);
-  };
-  $p;
-};
-sub find_slice {
-  my($tsv)=shift;
-  $DB::single=1;
-  my(@row)=TsvLine->load_file($tsv);
-  my(@res);
-  my($i,$j)=(0,0);
-  my($text)=$row[$i]->text(0);
-  my(@one)=map { $_->text(0) } @row;
-  while($i<$#one) {
-    for($i=$j;$i<$#one;$i++){
-      last if $tgt{$one[$i]};
-    };
-    for($j=$i+1;$j<$#one;$j++){
-      last if $tgt{$one[$j]};
-    };
-    next unless defined $row[$j];
-    eex [ $i, $j ];
-    push(@res,[ $row[$i]->top, $row[$j]->bottom ]);
-  };
-  @res;
-}
 sub main {
   my(@tsv)=map { path($_) } glob("tsv/202?-Q?-???.tsv");
   my($tsv,$png,@img);
-  while(defined($tsv=shift(@tsv))) {
-    ($png)=build_parent_png($tsv);
-    my($sli)="png/".($png->basename(".png")).".slice.png";
-    system("file $png");
-    my($img)=GD::Image->newFromPng("$png",1);
-    push(@img,find_slice($tsv));
-    for(@img) {
-      $_=GDUtil::slice_y($img,0,$_->[0],$_->[1]);
-    };
-    my($img)=stack_slices(@img);
-    say path($sli)->touchpath->spew($img->png);
-    splice(@img);
-    system("file $sli");
-  };
+  my(@s)=dbh->selectall_array("select * from 
 }
 

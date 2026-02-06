@@ -129,8 +129,9 @@ sub tsv_to_one {
   );
 };
 sub pdf_to_png {
-  die "usage: pdf_to_png(\$png)" unless @_;
-  return map { pdf_to_png($_) } @_ unless @_==1;
+  die "usage: pdf_to_png(\$png)" unless @_>1;
+  my($p)=shift;
+  return map { pdf_to_png($p,$_) } @_ unless @_==1;
   my($if)=path($_[0]);
   die "$if does not exist" unless -e $if;
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
@@ -205,7 +206,7 @@ sub tsv_combine {
 sub vhcmp {
   eex( [ $a, $b ] );
   return (
-    $a->{page_num} <=> $b->{page_num}
+    $a->{page} <=> $b->{page}
       or
     $a->{top} <=> $b->{top}
       or

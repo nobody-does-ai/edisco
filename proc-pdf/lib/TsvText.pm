@@ -19,13 +19,11 @@ BEGIN {
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
 };
-use overload (
-  q{""}    => 'tostring',
-);
+#    use overload (
+#      q{""}    => 'tostring',
+#    );
 sub new {
-  say STDERR ("new(",U::pp(\@_),")");
   my($self)= $_[0]->SUPER::new(@_[1..$#_]);
-  die "no rect" unless defined $self->{rect};
   $self;
 };
 sub rect {
@@ -65,10 +63,10 @@ sub pack {
   my($self)=$_[0];
   $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->word}); 
 }
-sub tostring {
-  my($self)=shift;
-  return join(" || ","",$self->top,$self->text,$self->bottom);
-};
+#    sub tostring {
+#      my($self)=shift;
+#      return join(" || ","",$self->top,$self->text,$self->bottom);
+#    };
 sub from {
   local(@_)=splice(@_);;
   my($class)=U::class(shift);
@@ -81,14 +79,5 @@ sub from {
 };
 sub page {
   return shift->{page};
-};
-sub word {
-  my($self)=$_[0];
-  my($text)=$self->{text};
-  return (defined ? $text->[$_] : $text) for $_[1];
-};
-sub text {
-  my($self)=$_[0];
-  die ref($self), "did not override text!";
 };
 1;

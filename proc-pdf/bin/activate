@@ -7,19 +7,22 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use Nobody::PP;
-use Env qw( @PATH @PERL5LIB );
+use Env qw( @PATH @PERL5LIB $HOME );
 our(@VERSION) = qw( 0 1 0 );
 
 my($pwd)=path(".");
+$ENV{OLD_PATH}=join(":",@PATH);
+$ENV{OLD_PERL5LIB}=join(":",@PERL5LIB);
 unshift(@PATH, $pwd->child("bin")->absolute);
 unshift(@PERL5LIB, $pwd->child("lib")->absolute);
-die "oops" unless $^F>fileno(STDLOG);
-unless(fork) {
-  $ENV{BASH_XTRACEFD}=fileno(STDLOG);
-  exec "/bin/bash";
-  die "exec:/bin/bash:$!";
+for(\@PATH, \@PERL5LIB){
+  say STDERR;
+  if(substr($_,0,5)eq'$HOME'){
+    substr($_,0,5,$HOME);
+  };
+
+  @$_=uniq(@$_);
 };
-$_='IGNORE' for values %SIG;
-while(($_=waitpid(0,0))>2) {
-  warn "pid $_ returned $?";
-};
+$ENV{BASH_XTRACEFD}=fileno(STDLOG);
+exec "/bin/bash";
+die "exec:/bin/bash:$!";

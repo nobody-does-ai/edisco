@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict J4hIngxooWZcdXOGzGVhpI7QFRGdOeXJtuE7K06b2OhdC09tMFtopVcDwErvPh0
+\restrict ocje0J5vJLgWMt2XwMcG3Z1Bm08Nflz3aQLhfzBAdhBWaV5CBTLerrehVn0vvWE
 
 -- Dumped from database version 15.15 (Debian 15.15-0+deb12u1)
 -- Dumped by pg_dump version 15.15 (Debian 15.15-0+deb12u1)
@@ -18,86 +18,49 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
---
--- Name: get_tsv_id(bigint, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: nn
---
-
-CREATE FUNCTION public.get_tsv_id(page bigint, l integer, t integer, level integer) RETURNS bigint
-    LANGUAGE sql IMMUTABLE PARALLEL SAFE
-    AS $$
-    SELECT (
-    (page - 2020000) * 10000000000) +
-    (l * 1000000 + 
-    (t * 10) + 
-    (level)
-  )
-$$;
-
-
-ALTER FUNCTION public.get_tsv_id(page bigint, l integer, t integer, level integer) OWNER TO nn;
-
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: tsv_raw; Type: TABLE; Schema: public; Owner: nn
+-- Name: tsv; Type: TABLE; Schema: public; Owner: nn
 --
 
-CREATE TABLE public.tsv_raw (
+CREATE TABLE public.tsv (
+    tsv integer NOT NULL,
     level integer NOT NULL,
-    page integer NOT NULL,
-    block integer,
-    par integer,
-    line integer,
-    word integer,
-    l integer NOT NULL,
-    t integer NOT NULL,
-    w integer,
-    h integer,
-    conf double precision,
+    page text NOT NULL,
+    block integer NOT NULL,
+    par integer NOT NULL,
+    line integer NOT NULL,
+    word integer NOT NULL,
+    x1 integer NOT NULL,
+    y1 integer NOT NULL,
+    dx integer NOT NULL,
+    dy integer NOT NULL,
+    conf double precision NOT NULL,
     text text
 );
 
 
-ALTER TABLE public.tsv_raw OWNER TO nn;
-
---
--- Name: tsv_id(public.tsv_raw); Type: FUNCTION; Schema: public; Owner: nn
---
-
-CREATE FUNCTION public.tsv_id(r public.tsv_raw) RETURNS bigint
-    LANGUAGE sql IMMUTABLE PARALLEL SAFE
-    AS $$
-    -- Use dot notation to access fields from the row argument 'r'
-    SELECT (r.page::bigint - 2020000) * 10000000000 + r.t * 1000000 + r.l * 10 + r.level
-$$;
-
-
-ALTER FUNCTION public.tsv_id(r public.tsv_raw) OWNER TO nn;
-
---
--- Name: tsv; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.tsv AS
- SELECT public.tsv_id(tsv_raw.*) AS tsv,
-    tsv_raw.level,
-    tsv_raw.page,
-    tsv_raw.block,
-    tsv_raw.par,
-    tsv_raw.line,
-    tsv_raw.word,
-    tsv_raw.l,
-    tsv_raw.t,
-    tsv_raw.w,
-    tsv_raw.h,
-    tsv_raw.conf,
-    tsv_raw.text
-   FROM public.tsv_raw;
-
-
 ALTER TABLE public.tsv OWNER TO nn;
+
+--
+-- Name: lines; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.lines AS
+ SELECT tsv.tsv,
+    tsv.page,
+    tsv.y1,
+    (tsv.y1 + tsv.dy) AS y2,
+    tsv.text,
+    rank() OVER (ORDER BY tsv.page, tsv.y1, tsv.x1) AS rank
+   FROM public.tsv
+  WHERE ((tsv.level = 5) AND (tsv.text = 'POLLOCK'::text));
+
+
+ALTER TABLE public.lines OWNER TO nn;
 
 --
 -- Name: marker; Type: VIEW; Schema: public; Owner: nn
@@ -105,107 +68,22 @@ ALTER TABLE public.tsv OWNER TO nn;
 
 CREATE VIEW public.marker AS
  SELECT tsv.tsv,
-    tsv.text
-   FROM public.tsv
-  WHERE (tsv.text = ANY (ARRAY['TRANSACTIONS'::text, 'INVESTMENTS'::text, 'Page'::text, 'INSURED'::text]))
-  ORDER BY tsv.tsv;
+    tsv.page,
+    tsv.y1,
+    tsv.x1,
+    tsv.text,
+    rank() OVER (ORDER BY tsv.page, tsv.y1, tsv.x1) AS rank
+   FROM public.tsv;
 
 
 ALTER TABLE public.marker OWNER TO nn;
 
 --
--- Name: page; Type: TABLE; Schema: public; Owner: nn
+-- Name: tsv_order; Type: VIEW; Schema: public; Owner: nn
 --
 
-CREATE TABLE public.page (
-    id integer,
-    name text,
-    year integer,
-    quar integer,
-    lpage integer
-);
-
-
-ALTER TABLE public.page OWNER TO nn;
-
---
--- Name: section_all; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.section_all AS
- SELECT marker.text AS text0,
-    marker.tsv AS tsv0,
-    lead(marker.tsv) OVER (ORDER BY marker.tsv) AS tsvn,
-    lead(marker.text) OVER (ORDER BY marker.tsv) AS textn
-   FROM public.marker;
-
-
-ALTER TABLE public.section_all OWNER TO nn;
-
---
--- Name: section; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.section AS
- SELECT section_all.text0,
-    section_all.tsv0,
-    section_all.tsvn,
-    section_all.textn
-   FROM public.section_all
-  WHERE (section_all.text0 = ANY (ARRAY['INVESTMENTS'::text, 'TRANSACTIONS'::text]));
-
-
-ALTER TABLE public.section OWNER TO nn;
-
---
--- Name: tsv_s; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.tsv_s AS
- SELECT tsv_raw.ctid,
-    (''::text || tsv_raw.level) AS levels,
-    (''::text || tsv_raw.page) AS pages,
-    (''::text || tsv_raw.l) AS ls,
-    (''::text || tsv_raw.t) AS ts
-   FROM public.tsv_raw;
-
-
-ALTER TABLE public.tsv_s OWNER TO nn;
-
---
--- Name: tsv_m; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.tsv_m AS
- SELECT max(length(tsv_s.levels)) AS levelm,
-    max(length(tsv_s.pages)) AS pagem,
-    max(length(tsv_s.ts)) AS tm,
-    max(length(tsv_s.ls)) AS lm
-   FROM public.tsv_s;
-
-
-ALTER TABLE public.tsv_m OWNER TO nn;
-
---
--- Name: tsv_id; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.tsv_id AS
- SELECT tsv_s.ctid,
-    concat(lpad(tsv_s.pages, tsv_m.pagem, '_'::text), lpad(tsv_s.ts, (tsv_m.tm + 1), '_'::text), lpad(tsv_s.ls, (tsv_m.lm + 1), '_'::text), lpad(tsv_s.levels, (tsv_m.levelm + 1), '_'::text)) AS concat
-   FROM public.tsv_s,
-    public.tsv_m;
-
-
-ALTER TABLE public.tsv_id OWNER TO nn;
-
---
--- Name: tsv_section; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.tsv_section AS
- SELECT section.tsv0,
-    section.tsvn,
+CREATE VIEW public.tsv_order AS
+ SELECT rank() OVER (ORDER BY tsv.page, tsv.y1, tsv.x1, tsv.level) AS tid,
     tsv.tsv,
     tsv.level,
     tsv.page,
@@ -213,69 +91,172 @@ CREATE VIEW public.tsv_section AS
     tsv.par,
     tsv.line,
     tsv.word,
-    tsv.l,
-    tsv.t,
-    tsv.w,
-    tsv.h,
+    tsv.x1,
+    tsv.y1,
+    tsv.dx,
+    tsv.dy,
     tsv.conf,
     tsv.text
-   FROM public.section,
-    public.tsv
-  WHERE ((section.tsv0 <= tsv.tsv) AND (section.tsvn >= tsv.tsv));
+   FROM public.tsv
+  ORDER BY tsv.page, tsv.y1, tsv.x1, tsv.level;
 
 
-ALTER TABLE public.tsv_section OWNER TO nn;
-
---
--- Name: tsvp; Type: VIEW; Schema: public; Owner: nn
---
-
-CREATE VIEW public.tsvp AS
- SELECT public.tsv_id(tsv_raw.*) AS tsv,
-    tsv_raw.level,
-    tsv_raw.page,
-    tsv_raw.block,
-    tsv_raw.par,
-    tsv_raw.line,
-    tsv_raw.word,
-    tsv_raw.l,
-    tsv_raw.t,
-    tsv_raw.w,
-    tsv_raw.h,
-    (tsv_raw.l + tsv_raw.w) AS r,
-    (tsv_raw.t + tsv_raw.h) AS b,
-    tsv_raw.conf,
-    tsv_raw.text
-   FROM public.tsv_raw;
-
-
-ALTER TABLE public.tsvp OWNER TO nn;
+ALTER TABLE public.tsv_order OWNER TO nn;
 
 --
--- Name: tsv_raw tsv_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
+-- Name: tsv_markers; Type: VIEW; Schema: public; Owner: nn
 --
 
-ALTER TABLE ONLY public.tsv_raw
-    ADD CONSTRAINT tsv_pkey PRIMARY KEY (level, page, t, l);
+CREATE VIEW public.tsv_markers AS
+ SELECT tsv_order.tid,
+    tsv_order.tsv,
+    tsv_order.level,
+    tsv_order.page,
+    tsv_order.block,
+    tsv_order.par,
+    tsv_order.line,
+    tsv_order.word,
+    tsv_order.x1,
+    tsv_order.y1,
+    tsv_order.dx,
+    tsv_order.dy,
+    tsv_order.conf,
+    tsv_order.text
+   FROM public.tsv_order
+  WHERE (tsv_order.text = ANY (ARRAY['INVESTMENTS'::text, 'TRANSACTIONS'::text, 'Page'::text, 'INSURED'::text]));
+
+
+ALTER TABLE public.tsv_markers OWNER TO nn;
+
+--
+-- Name: tsv_page; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_page AS
+ SELECT rank() OVER (ORDER BY tsv.page, tsv.y1, tsv.x1) AS tid,
+    tsv.tsv,
+    tsv.level,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.x1,
+    tsv.y1,
+    tsv.dx,
+    tsv.dy,
+    tsv.conf,
+    tsv.text
+   FROM public.tsv
+  ORDER BY tsv.page, tsv.y1, tsv.x1;
+
+
+ALTER TABLE public.tsv_page OWNER TO nn;
+
+--
+-- Name: tsv_range; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_range AS
+ SELECT foo.rid,
+    foo.tid1,
+    foo.text1,
+    foo.tid2,
+    foo.text2
+   FROM ( SELECT rank() OVER (ORDER BY m1.tid) AS rid,
+            m1.tid AS tid1,
+            m1.text AS text1,
+            lead(m1.tid) OVER (ORDER BY m1.tid) AS tid2,
+            lead(m1.text) OVER (ORDER BY m1.tid) AS text2
+           FROM public.tsv_markers m1) foo
+  WHERE ((foo.text1 = 'INVESTMENTS'::text) OR (foo.text1 = 'TRANSACTIONS'::text));
+
+
+ALTER TABLE public.tsv_range OWNER TO nn;
+
+--
+-- Name: tsv_range_w; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_range_w AS
+ SELECT r.rid,
+    t.tid,
+    t.tsv,
+    t.level,
+    t.page,
+    t.block,
+    t.par,
+    t.line,
+    t.word,
+    t.x1,
+    t.y1,
+    t.dx,
+    t.dy,
+    t.conf,
+    t.text
+   FROM public.tsv_range r,
+    public.tsv_order t
+  WHERE ((t.tid >= r.tid1) AND (t.tid <= r.tid2))
+  ORDER BY t.tid;
+
+
+ALTER TABLE public.tsv_range_w OWNER TO nn;
+
+--
+-- Name: tsv_temp; Type: TABLE; Schema: public; Owner: nn
+--
+
+CREATE UNLOGGED TABLE public.tsv_temp (
+    level integer,
+    page text,
+    block integer,
+    par integer,
+    line integer,
+    word integer,
+    x1 integer,
+    y1 integer,
+    dx integer,
+    dy integer,
+    conf double precision,
+    text text
+);
+
+
+ALTER TABLE public.tsv_temp OWNER TO nn;
+
+--
+-- Name: tsv_tsv_seq; Type: SEQUENCE; Schema: public; Owner: nn
+--
+
+ALTER TABLE public.tsv ALTER COLUMN tsv ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tsv_tsv_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 
 --
--- Name: idx_tsv_raw_synthetic_id; Type: INDEX; Schema: public; Owner: nn
+-- Name: tsv tsv_page_t_l_level_key; Type: CONSTRAINT; Schema: public; Owner: nn
 --
 
-CREATE INDEX idx_tsv_raw_synthetic_id ON public.tsv_raw USING btree (public.tsv_id(tsv_raw.*));
+ALTER TABLE ONLY public.tsv
+    ADD CONSTRAINT tsv_page_t_l_level_key UNIQUE (page, y1, x1, level);
 
 
 --
--- Name: idx_tsv_synthetic_id; Type: INDEX; Schema: public; Owner: nn
+-- Name: tsv tsv_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
 --
 
-CREATE INDEX idx_tsv_synthetic_id ON public.tsv_raw USING btree ((((((((((page)::bigint - 2020000) * 100000) * 100000) * 10) + ((l * 100000) * 10)) + (t * 10)) + level)));
+ALTER TABLE ONLY public.tsv
+    ADD CONSTRAINT tsv_pkey PRIMARY KEY (tsv);
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict J4hIngxooWZcdXOGzGVhpI7QFRGdOeXJtuE7K06b2OhdC09tMFtopVcDwErvPh0
+\unrestrict ocje0J5vJLgWMt2XwMcG3Z1Bm08Nflz3aQLhfzBAdhBWaV5CBTLerrehVn0vvWE
 

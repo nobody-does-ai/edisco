@@ -15,9 +15,8 @@ our($DEBUG)=0;
 my @rect=qw( top left width height );
 sub new {
   local(@_)=@_;
-  #U::eex(\@_);
   my($class)=U::class(shift);
-  my($self)={U::flatten(@_)};
+  my($self)={@_};
   bless($self,$class);
   $self;
 };
@@ -37,19 +36,18 @@ sub export {
     $_=shift;
     if(U::safe_isa($$_,'TsvRect')) {
       my(%hash);
-      for( qw( left top width height ) ){
-        $hash{left}=($$_)->left;
-        $hash{top}=($$_)->top;
-        $hash{width}=($$_)->width;
-        $hash{height}=($$_)->height;
-      };
+      my($rect)=$$_;
+      $hash{x1}=($rect)->x1;
+      $hash{y1}=($rect)->y1;
+      $hash{dx}=($rect)->dx;
+      $hash{dy}=($rect)->dy;
       $$_={ %hash };
     } elsif(U::safe_isa($$_,'Tsv')){
       $$_=($$_)->export;
     } elsif ( U::safe_isa($$_,'HASH') ) {
       push(@_,map { \($$_->{$_}) } keys %$$_);
     } elsif ( U::safe_isa($$_,'ARRAY')) {
-      push(@_,map { \($$_->[$_]) } keys @$$_);
+      push(@_,@$$_);
     } elsif ( !ref($$_) ) {
       $_=$$_;
     } else {

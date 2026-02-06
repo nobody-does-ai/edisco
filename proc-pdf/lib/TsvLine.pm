@@ -15,16 +15,15 @@ use common::sense;
   our($DEBUG);
 };
 sub vsort;
+*eex=\&U::eex;
 *vsort=\&U::vsort;
 sub new {
   local(@_)=@_;
   my($class)=shift;
-  my(@word)=map { U::safe_isa($_[$_],'TsvWord')?delete($_[$_]):() } 0 .. $#_;
-  my($self)=$class->SUPER::new(@_);
-  $self->{text}=\@word;
-  #U::eex($self->word);
-  #U::eex($self);
-  #U::eex($self);
+  my(@word)=splice(@_);
+  my($rect) = @word[0]->{rect}->clone() if @word;
+  my($self)=$class->SUPER::new(rect=>$rect);
+  $self->{word}=\@word;
   $self->pack;
   $self;
 };
@@ -43,10 +42,7 @@ sub pack {
 sub from {
   local(@_)=@_;
   my($class)=U::class(shift);
-  my(%ref);
-  for(map { ref } @_ ){
-    $ref{$_}++;
-  };
+  my(@other)=grep { defined and $_->level != 5 } @_;
   @_=grep { defined and  $_->level == 5 } @_;
   @_=vsort @_;
   my(@line);
@@ -54,6 +50,7 @@ sub from {
     my(@tmp)=TsvUtil::group_find(\@_);
     push(@line,TsvLine->new(@tmp));
   };
+  @line=vsort(@line,@other);
   @line;
 };
 sub extra {
@@ -72,13 +69,12 @@ sub load_file {
   my(@line)=TsvLine->from(@word);
   @line;
 };
+sub word {
+  my($self)=$_[0];
+  return $self->{word};
+}
 sub text {
   my($self)=$_[0];
-  if(defined($_[1])) {
-    return map { $_->text } grep { defined } $self->word($_[1]);
-  } else {
-    local(@_)=map { ref($_)?$_->text:$_ } @{$self->{text}};
-    return join("\n    ",split(" \n ",join(" ",@_)));
-  };
+  "$self";
 };
 1;

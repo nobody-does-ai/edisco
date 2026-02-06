@@ -15,18 +15,12 @@ our(%key);
 our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
-our(@prim,@head);
-INIT {
-  @head=qw( top left width height );
-  @prim = ( "x1 l left", "x2 r right", "y1 t top", "y2 b bottom" );
-  for(@prim) {
-    my(@s)=split;
-    my($s)=$s[0];
-    for(@s) {
-      $key{$_}=$s for@s;
-      $key{$s}=$s;
-    };
-  };
+our(@prim);
+BEGIN {
+  $key{$_}="x1" for qw( l left x x1 );
+  $key{$_}="x2" for qw( r right x2 );
+  $key{$_}="y1" for qw( t top y y1 );
+  $key{$_}="y2" for qw( b bottom y2 );
   $key{$_}="dx" for qw( w width dx );
   $key{$_}="dy" for qw( h height dy );
 };
@@ -158,26 +152,26 @@ sub cx {
   my($self)=shift;
   int(($self->x1+$self->x2)/2);
 };
-use overload (
-  q{""}    => 'tostring',
-);
-sub tostring {
-  local(@_)=@_;
-  my($self)=shift;
-  local(@_)=qw(x1 cx x2 y1 cy y2);
-  for(@_){
-    $_=[$_,$self->$_]
-  };
-  for(@_){
-    if($_->[0] =~ m{c}) {
-      $_=sprintf("%3s => %6.1f", @$_);
-    } else {
-      $_=sprintf("%3s => %6d", @$_);
-    };
-  };
-  my($txt)=join(", ",@_);
-  join(" ","{",$txt,"}");
-};
+#    use overload (
+#      q{""}    => 'tostring',
+#    );
+#    sub tostring {
+#      local(@_)=@_;
+#      my($self)=shift;
+#      local(@_)=qw(x1 cx x2 y1 cy y2);
+#      for(@_){
+#        $_=[$_,$self->$_]
+#      };
+#      for(@_){
+#        if($_->[0] =~ m{c}) {
+#          $_=sprintf("%3s => %6.1f", @$_);
+#        } else {
+#          $_=sprintf("%3s => %6d", @$_);
+#        };
+#      };
+#      my($txt)=join(", ",@_);
+#      join(" ","{",$txt,"}");
+#    };
 sub horz {
   my($self)=shift;
   return ($self->top, $self->bottom);

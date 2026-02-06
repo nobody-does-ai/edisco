@@ -12,29 +12,38 @@ $|++;
 
 our(@VERSION) = qw( 0 1 0 );
 
-my(@tsv)=map { path($_) } sort glob("tsv/*-???.tsv");
 use Path::Tiny;
+our(%marker);
+sub main
 {
-  my(@all);
-  for my $page(values %{page()}) {
-    my($lpage)=$page->{id};
-    $page=$page->{name};
-    my($file)=path("tsv")->child($page);
-    my(@lines)=grep { m{^[0-5]} } $file->lines;
-    for(@lines) {
-      chomp;
-      local(@_)=split(m{\t});
-      $_[1]=$lpage;
-      push(@_,undef) while(@_<12);
-      $_=join("\t",@_)."\n";
-    };
-    push(@all,@lines);
-  };
-
-  eex( dbh->selectall_array( "select count(*) from tsv" ) );
+  my(@page)=map{path($_)}sort glob("tsv/202?-Q?-???.tsv");
   dbh->do("delete from tsv");
-  eex( dbh->selectall_array( "select count(*) from tsv" ) );
-  ins_tsv(@all);
-  eex( dbh->selectall_array( "select count(*) from tsv" ) );
+  my(%trig);
+  $trig{INVESTMENTS}=2;
+  $trig{TRANSACTIONS}=2;
+  $trig{Page}=1;
+  my(@all);
+  for my $p(keys @page) {
+    my($page)=$page[$p];
+    $p+=1000;
+    my(@line)=TsvLine->load_file($page);
+    my($i)=1000;
+    for(@line) {
+      my(@word)=@{$_->word};
+      ++$i;
+      for (@word){
+        $_->{line}=$i;
+        $_->{page}=$p;
+      }
+      push(@all,@word);
+    };
+    say scalar(@all);
+  };
+  say scalar(@all);
+  @all=TsvUtil::vsort(@all);
+  tsv_insert(@all);
+
+  dbh->disconnect;
 };
-dbh->disconnect;
+
+main;

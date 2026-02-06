@@ -14,8 +14,14 @@ use common::sense;
 };
 use TsvText;
 our(@ISA)=qw(TsvText);
-our(@cols,@bad,%map);
+our(@cols,%key);
 BEGIN {
+  for(qw( level page_num block_num par_num line_num word_num conf text rect )){
+    $key{$_}=$_;
+  };
+  for(values %key) {
+    s{_num}{};
+  };
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
 };
@@ -24,9 +30,12 @@ my(@word);
 sub new {
   local(@_)=@_;
   my($class)=U::class(shift);
-  my($self)=shift;
-  my($rect)=TsvRect->take_data($self);
-  $self=$class->SUPER::new(rect=>$rect,$self);
+  my($self)={@_};
+  $self->{rect}=TsvRect->take_data($self);
+  for my $old(keys %$self){
+    $self->{$key{$old}}=delete $self->{$old} if $key{$old};
+  };
+  $self=$class->SUPER::new(%$self);
 #      my(%data)=map { %$_ } shift;
 #      my($rect)=TsvRect->take_data(\%data);
 #      my($self)={ %data };
@@ -39,36 +48,24 @@ sub from {
   for(@_) {
     next if(U::safe_isa($_,'TsvWord'));
     die "Expected hash, got: ", U::pp($_) unless ref($_) eq "HASH";
-    $_=$class->new($_);
+    $_=$class->new(%$_);
   };
   return @_;
 };
-BEGIN {
-  for( qw( page block par line word ) ) {
-    $map{$_."_num"}=$_;
-  };
-  for(values %map) {
-    $map{$_}=$_;
-  };
-};
+our(%h,@a);
 sub hash {
   local(@_)=@_;
-  if($_[0] eq __PACKAGE__){
+  if(U::class($_[0]) eq __PACKAGE__){
     shift;
   };
-  if(@cols) {
-    local(@_)=map { $map{$_} } map { @$_ } shift;
-    die "col mismatch (@_ != @cols)" unless "@_" eq "@cols";
-  } else {
-    @cols=map { @$_ } shift;
-    @bad=grep { m{_num} } @cols;
-  };
   for(@_) {
-    local(@_)=@$_;
-    my(%data)=map {$_,shift} @cols;
-    delete $data{$_} for @bad;
-    $_=\%data;
+    if(ref eq 'ARRAY') {
+      local(@_)=@$_;
+      $_={ map { $_, shift } @cols };
+    };
+    die "idk how to handle: $_" unless ref($_) eq 'HASH';
   };
+  shift if $_->{level} eq 'level';
   @_;
 };
 sub fixup {
@@ -90,13 +87,17 @@ sub parse_file {
   my($class,$file)=@_;
   $file=U::path($file) unless ref($file);
   local(@_)=$file->lines;
-  parse_lines(@_);
+  if(substr($_[0],0,1) eq 'l'){
+    @cols=map { split m{[\t\n]} } shift;
+  };
+  @_=parse_lines(@_);
+  $_->{page}=$file->basename(".tsv") for @_;
+  @_;
 }
 sub parse_lines {
   shift if $_[0]->isa(__PACKAGE__);
-  @_=map { [split m{[\t\n]}] } grep { m{^[5l]} } @_;
+  $_=[split m{[\t\n]}] for grep { !ref } @_;
   @_=hash(@_);
-  @_ = map { ref($_)eq'ARRAY'?(@$_):$_ } @_;
   @_;
 };
 sub load_file {

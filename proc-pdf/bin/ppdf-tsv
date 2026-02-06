@@ -35,11 +35,12 @@ sub main {
   @_ = map { path($_) } @_;
   local(@_)=@_;
   my(@tsv);
+  my($p)=100;
   for my $pdf(@_) {
     my($tsv)=path(grep { s{(pdf|src)}{tsv}g } $pdf->stringify);
     local(@_);
     @_=pdf_to_pgs($pdf);
     @_=pdf_to_png(@_);
-    @_=png_to_tsv(@_);
+    @_=png_to_tsv($p++,@_);
   };
 } 
