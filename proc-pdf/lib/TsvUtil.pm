@@ -138,7 +138,7 @@ sub pdf_to_png {
   if(older($if,$of)) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
-    my(@cmd)=qw(pdftoppm -png -singlefile $if > $of);
+    my(@cmd)=qw(pdftoppm -png -r 300 -singlefile $if > $of);
     run($if,$of,@cmd);
   };
   return $of;
@@ -159,6 +159,7 @@ sub png_to_tsv {
       'tesseract',
       '$if',
       "-",
+      '--dpi', 300,
       'tsv',
       '>',
       '$of'

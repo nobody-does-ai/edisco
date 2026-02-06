@@ -31,8 +31,7 @@ sub pack {
   my($self)=$_[0];
   #  U::eex($self);
   $self->{rect}=TsvRect->union(
-    map { U::safe_can($_,'rect') ? $_->rect : $_ }
-    ($self->{rect}, @{$self->{text}})
+    map { $_->rect } ($self->{rect}, @{$self->{text}})
   ); 
   #  for(@{$self->word}){
   #  U::eex $_;
@@ -42,6 +41,9 @@ sub pack {
 sub from {
   local(@_)=@_;
   my($class)=U::class(shift);
+  if(grep { ref($_) eq 'HASH' } @_){
+    @_=TsvWord->from(@_);
+  };
   my(@other)=grep { defined and $_->level != 5 } @_;
   @_=grep { defined and  $_->level == 5 } @_;
   @_=vsort @_;
@@ -75,6 +77,8 @@ sub word {
 }
 sub text {
   my($self)=$_[0];
-  "$self";
+  my($word)=$self->word($_[1]);
+  my(@text)=map { $_->{text} } @$word;
+  join(" ",@text);
 };
 1;

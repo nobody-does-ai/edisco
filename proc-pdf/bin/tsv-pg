@@ -16,14 +16,19 @@ use Path::Tiny;
 our(%marker);
 sub main
 {
+  local($SIG{__DIE__})=sub { $DB::single=1; die @_; };
+  local($SIG{__WARN__})=sub { $DB::single=1; die @_; };
   my(@page)=map{path($_)}sort glob("tsv/202?-Q?-???.tsv");
-  dbh->do("delete from tsv");
+  eval {
+    dbh->do("delete from tsv");
+  };
+
   my(%trig);
   $trig{INVESTMENTS}=2;
   $trig{TRANSACTIONS}=2;
   $trig{Page}=1;
-  my(@all);
   for my $p(keys @page) {
+    my(@all);
     my($page)=$page[$p];
     $p+=1000;
     my(@line)=TsvLine->load_file($page);
@@ -38,10 +43,10 @@ sub main
       push(@all,@word);
     };
     say scalar(@all);
+    say scalar(@all);
+    @all=TsvUtil::vsort(@all);
+    tsv_insert(@all);
   };
-  say scalar(@all);
-  @all=TsvUtil::vsort(@all);
-  tsv_insert(@all);
 
   dbh->disconnect;
 };

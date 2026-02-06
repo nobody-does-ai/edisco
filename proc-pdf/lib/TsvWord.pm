@@ -36,10 +36,9 @@ sub new {
     $self->{$key{$old}}=delete $self->{$old} if $key{$old};
   };
   $self=$class->SUPER::new(%$self);
-#      my(%data)=map { %$_ } shift;
-#      my($rect)=TsvRect->take_data(\%data);
-#      my($self)={ %data };
-#      $self->{rect}=$rect;
+  if($self->{text} =~ m{ }){
+    $self->{text} =~ s{ }{_}g;
+  };
   bless($self,$class);
 };
 sub from {

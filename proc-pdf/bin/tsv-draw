@@ -10,9 +10,6 @@ BEGIN {
   *eex=*U::eex;
   *TsvWord::eex=*U::eex;
 };
-BEGIN {
-  my(@cols)=qw(level page block par line word left top width height conf text );
-};
 use DBI;
 use Time::HiRes qw(sleep );
 use DBD::Pg qw(:pg_types); # Required for PGRES constants if needed

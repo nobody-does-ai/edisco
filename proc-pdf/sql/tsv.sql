@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ocje0J5vJLgWMt2XwMcG3Z1Bm08Nflz3aQLhfzBAdhBWaV5CBTLerrehVn0vvWE
+\restrict 6YMbHd4lMNA6YtWcoBM1VXa1YUBJfCSnHm3MzHwcPLCyn2w491Cdm0lVremu76g
 
 -- Dumped from database version 15.15 (Debian 15.15-0+deb12u1)
 -- Dumped by pg_dump version 15.15 (Debian 15.15-0+deb12u1)
@@ -225,6 +225,28 @@ CREATE UNLOGGED TABLE public.tsv_temp (
 ALTER TABLE public.tsv_temp OWNER TO nn;
 
 --
+-- Name: tsv_temp_view; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_temp_view AS
+ SELECT tsv_temp.level,
+    tsv_temp.page,
+    tsv_temp.block,
+    tsv_temp.par,
+    tsv_temp.line,
+    tsv_temp.word,
+    tsv_temp.x1,
+    tsv_temp.y1,
+    tsv_temp.dx,
+    tsv_temp.dy,
+    tsv_temp.conf,
+    tsv_temp.text
+   FROM public.tsv_temp;
+
+
+ALTER TABLE public.tsv_temp_view OWNER TO nn;
+
+--
 -- Name: tsv_tsv_seq; Type: SEQUENCE; Schema: public; Owner: nn
 --
 
@@ -258,5 +280,5 @@ ALTER TABLE ONLY public.tsv
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ocje0J5vJLgWMt2XwMcG3Z1Bm08Nflz3aQLhfzBAdhBWaV5CBTLerrehVn0vvWE
+\unrestrict 6YMbHd4lMNA6YtWcoBM1VXa1YUBJfCSnHm3MzHwcPLCyn2w491Cdm0lVremu76g
 

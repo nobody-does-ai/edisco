@@ -20,9 +20,26 @@ my(%tgt);
 my(@inv,@trn);
 $|++;
 
+sub invest {
+  local(@_)=@_;
+  my(@lr)=map { $_->rect, $_->text } @_;
+  eex(\@lr);
+  for(@_) {
+    $_->pack;
+  };
+};
 sub main {
   my(@tsv)=map { path($_) } glob("tsv/202?-Q?-???.tsv");
   my($tsv,$png,@img);
-  my(@s)=dbh->selectall_array("select * from 
+  our(@range);
+  local(@range)=@{tsv_fetch_range()};
+  say scalar(@range);
+  for(@range){
+    local(*_)=$_->{tsv};
+    my(@line)=grep { ref($_) eq 'TsvLine' } TsvLine->from(@_);    
+    if($line[0]->text(0) eq 'INVESTMENTS') {
+      invest(@line);
+    };
+  };
 }
 

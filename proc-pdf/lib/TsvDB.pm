@@ -3,6 +3,7 @@ use base 'Exporter';
 use DBI;
 use Nobody::Util;
 use common::sense;
+use Time::HiRes qw(time);
 use Tsv;
 use TsvWord;
 our(@EXPORT);
@@ -10,7 +11,7 @@ BEGIN {
   push(@EXPORT,
     qw(
     head  tsv_insert      hash_fetch      word_fetch
-    dbh   line_fetch      tsv_fetch
+    dbh   line_fetch      tsv_fetch       tsv_fetch_range
     )
   );
 }
@@ -18,62 +19,20 @@ BEGIN {
   use subs (@EXPORT);
   undef &head;
 };
-#    {
-#      my($re)=qr(202(.)-Q(.)(-[0-9][0-9][0-9]|).tsv);
-#      sub parse_tsv_name {
-#        return map { $_, parse_tsv_name($_) } @_ unless @_==1;
-#        local($_)=shift;
-#        my(%res)=( name=>$_ );
-#        unless(2<=(@res{qw( year quar lpage )}=m{$re})) {
-#          die "parse failed";
-#        };
-#        $res{quar}+=4+($res{year}-3);
-#        if(exists $res{lpage}){
-#          local(*_)=\$res{lpage};
-#          next unless length;
-#          s{^-}{};
-#          $res{page}=join("",@res{qw(year quar lpage)});
-#        };
-#        $res{year}+=2020;
-#        \%res;
-#      }
-#    };
-#    {
-#      my(@pg_cols)=qw(page name year quar lpage);
-#      my($sql_fmt)=q{
-#      insert into page(%s) values (?,?,?,?,?) on conflict do nothing
-#      };
-#      sub page_insert {
-#        @_=glob("tsv/202?-Q?-???.tsv") unless @_;
-#        state($sql);
-#        $sql//=sprintf($sql_fmt,join(", ",@pg_cols));
-#        state($sth);
-#        $sth//=dbh->prepare($sql);
-#        dbh->do("delete from page");
-#        our(%obj)=parse_tsv_name(@_);
-#        for(values(%obj)){
-#          local(*obj)=$_;
-#          $sth->execute(@obj{@pg_cols});
-#        };
-#        page_fetch;
-#      };
-#    }
 {
   sub tsv_insert {
     local(@_)=@_;
     state(@head);
     @head=head('db') unless @head;
-    eex(\@head);
     state($head);
     $head//=join(", ",@head);
     state($body);
     $body//=join(", ", map { "?" } @head);
     state($sql);
-    $sql//="COPY tsv_temp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
+    $sql//="COPY tsv_tmp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
     state($sth);
     $sth//=dbh->prepare($sql);
-    eex(\@head);
-    dbh->do("delete from tsv_temp");
+    dbh->do("delete from tsv_tmp");
     for (@_){
       my($word)=$_;
       my($rect)=$word->{rect};
@@ -87,13 +46,55 @@ BEGIN {
           push(@data,$word->{$_});
         };
       };
+      $data[$#data]=~s{\\}{\\\\}g;
       $_=join("\t",@data);
     };
     $sth->execute();
     dbh->pg_putcopydata(join("\n",@_,""));
     dbh->pg_endcopy();
-    dbh->do("insert into tsv ( $head ) ( select $head from tsv_temp ) on conflict do nothing");
+    dbh->do("insert into tsv_tmp ( $head ) ( select * from tsv_raw )" );
+    dbh->do("insert into tsv_raw ( $head ) ( select  from tsv_tmp_view ) on conflict do nothing");
     eex( dbh->selectrow_hashref("select count(*) from tsv") );
+  };
+  sub tsv_fetch {
+    local(@_)=@_;
+    my($where)=@_?join("",@_):"null is null";
+    my(@tsv)=hash_fetch("select * from tsv_order where $where");
+    @tsv;
+  }
+  sub tsv_fetch_range {
+    my($time)=time;
+    my(%range)=%{dbh->selectall_hashref("select * from tsv_range r","rid")};
+    say STDERR sprintf "range loaded: %f", $time-time;
+    for(values %{range}){
+      $_->{where}=sprintf("(tid >= %8d and tid <= %8d)",$_->{tid1},$_->{tid2});
+    };
+    my($where)=join("\nor\n", map { $_->{where} } values %{range});
+    $time=time;
+    my(%tsv)=%{dbh->selectall_hashref("select * from tsv_order where $where","tid")};
+    say STDERR sprintf "tsvs loaded: %f", $time-time;
+    my (@range)=sort { $a->{rid} <=> $b->{rid} } values %range;
+    my($r)=0;
+    my ($range)=$range[$r++];
+    for(sort { $a <=> $b } keys %tsv) {
+      if($range->{tid1}> $_) {
+        die "something wrong", pp($range, $_);
+      };
+      while($range->{tid2}<$_) {
+        $range=$range[$r++];
+        die "ran out of ranges" unless defined $range;
+      }
+      push(@{$range->{tsv}},delete $tsv{$_});
+    };
+    for my $range(@range) {
+      for( $range->{tsv} ) {
+        @$_=sort { $a->{tid} <=> $b->{tid} } @$_;
+      };
+      local(*_)=$range->{tsv};
+      die "soemthing wrong: ", pp($range) if($_[0]->{tsv}{tid} < $range->{tsv1});
+      die "soemthing wrong: ", pp($range) if($_[$#_]->{tsv}{tid} > $range->{tsv2});
+    };
+    \@range;
   };
 };
 #    {
@@ -163,18 +164,10 @@ sub hash_fetch {
     $sth=dbh->prepare($sql);
   };
   $sth->execute;
-  my(@res);
-  while($_=$sth->fetchrow_hashref){
-    push(@res,$_);
-  };
+  my($stime)=time;
+  my(@res)=$sth->fetchall_array;;
   return @res;
 };
-sub tsv_fetch {
-  local(@_)=@_;
-  my($where)=@_?join("",@_):"null is null";
-  my(@tsv)=hash_fetch("select * from tsv where $where");
-  @tsv;
-}
 sub word_fetch {
   my(@tsv)=tsv_fetch(@_);
   for(@tsv){
@@ -197,10 +190,11 @@ sub line_fetch {
 };
 unless(caller(0)){
 #      eex(page_insert);
-  eex(dsn);
-  eex(dbh);
-  eex(head('db'));
-  eex(head('fs'));
+  eex( tsv_fetch_range );
+#      eex(dsn);
+#      eex(dbh);
+#      eex(head('db'));
+#      eex(head('fs'));
 #      eex(page);
 };
 1;
