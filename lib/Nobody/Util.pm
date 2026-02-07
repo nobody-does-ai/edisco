@@ -125,6 +125,16 @@ sub file_id {
   package Null;
 };
 sub flatten(@);
+sub ref_count(@_){
+  my(%ref);
+  for(@_) {
+    my($ref)=ref($_);
+    $ref="<blank>" if defined and !length;
+    $ref="<undef>" unless defined;
+    $ref{$ref}++;
+  };
+  pp(\%ref);
+};
 sub flatten(@){
   return map { flatten($_) } @_ unless @_==1;
   local($_)=shift;
