@@ -23,42 +23,11 @@ BEGIN {
 #      q{""}    => 'tostring',
 #    );
 sub new {
-  my($self)= $_[0]->SUPER::new(@_[1..$#_]);
-  $self;
-};
-sub rect {
-  my($self)=$_[0];
-  $self->{rect};
+  $_[0]->SUPER::new(@_[1..$#_]);
 };
 sub level {
-  my($self)=shift;
-  return $self->{level};
+  shift->{level};
 };
-sub cx {
-  shift->rect->cx(@_);
-};
-sub cy {
-  return undef unless ref $_[0] and ref($_[0]->{rect});;
-  shift->rect->cy(@_);
-};
-sub left {
-  shift->rect->left(@_);
-}
-sub right {
-  shift->rect->right(@_);
-}
-sub height {
-  shift->rect->height(@_);
-};
-sub width {
-  shift->rect->width(@_);
-};
-sub top {
-  shift->rect->top(@_);
-}
-sub bottom {
-  shift->rect->bottom(@_);
-}
 sub pack {
   my($self)=$_[0];
   $self->{rect}=TsvRect->union(map {$_->{rect}} @{$self->word}); 
@@ -68,7 +37,7 @@ sub pack {
 #      return join(" || ","",$self->top,$self->text,$self->bottom);
 #    };
 sub from {
-  local(@_)=splice(@_);;
+  local(@_)=@_;
   my($class)=U::class(shift);
   @_=sort { $a->cy <=> $b->cy } grep { defined } @_;
   my(@line);
@@ -77,6 +46,12 @@ sub from {
   };
   @line;
 };
+sub  x1  {  shift->left    };
+sub  x2  {  shift->right   };
+sub  dy  {  shift->height  };
+sub  dx  {  shift->width   };
+sub  y1  {  shift->top     };
+sub  y2  {  shift->bottom  };
 sub page {
   return shift->{page};
 };

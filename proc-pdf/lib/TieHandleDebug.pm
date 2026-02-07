@@ -10,7 +10,7 @@ sub TIEHANDLE {
 };
 our($DEBUG)=1;
 sub WRITE {
-  $DB::single=$DEBUG;
+#      $DB::single=$DEBUG;
   $_[0]->SUPER::WRITE(@_[1..-1+@_]);
 };
 tie *STDERR, 'TieHandleDebug';

@@ -35,21 +35,51 @@ sub new {
   for my $old(keys %$self){
     $self->{$key{$old}}=delete $self->{$old} if $key{$old};
   };
+#      U::eex( \$self);
+  return () if $self->{level}==5 and $self->{text} !~ m{\S};
+  return () if $self->{level}==5 and $self->{rect}->dy > 100;
   $self=$class->SUPER::new(%$self);
+  warn U::pp($self) if $self->{text} =~ m@Hash@;
   if($self->{text} =~ m{ }){
     $self->{text} =~ s{ }{_}g;
   };
+#      U::eex( $self->{text} );
   bless($self,$class);
 };
+sub rect {
+  shift->{rect};
+};
+sub left {
+  shift->rect->left(@_);
+}
+sub right {
+  shift->rect->right(@_);
+}
+sub cx {
+  shift->rect->cx(@_);
+};
+sub cy {
+  shift->rect->cy(@_);
+};
+sub height {
+  shift->rect->height(@_);
+};
+sub width {
+  shift->rect->width(@_);
+};
+sub top {
+  shift->rect->top(@_);
+}
+sub bottom {
+  shift->rect->bottom(@_);
+}
 sub from {
   local(@_)=@_;
   my($class)=U::class(shift);
   for(@_) {
-    next if(U::safe_isa($_,'TsvWord'));
-    die "Expected hash, got: ", U::pp($_) unless ref($_) eq "HASH";
-    $_=$class->new(%$_);
+    $_=TsvWord->new(%{$_});
   };
-  return @_;
+  return grep { defined } @_;
 };
 our(%h,@a);
 sub hash {
@@ -61,20 +91,12 @@ sub hash {
     if(ref eq 'ARRAY') {
       local(@_)=@$_;
       $_={ map { $_, shift } @cols };
+#          U::eex($_);
     };
     die "idk how to handle: $_" unless ref($_) eq 'HASH';
   };
   shift if $_->{level} eq 'level';
   @_;
-};
-sub fixup {
-  local(*_)=shift;
-  if($_[$#_] =~ m{^(account:)(.*)}){
-    my($a,$b)=(hash(@_),hash(@_));
-    U::eex($a);
-    U::eex($b);
-  };
-  return \@_;
 };
 sub parse_file {
   die "usage: ".__PACKAGE__."->parse_file(path(\"name\"))" unless (
@@ -86,8 +108,10 @@ sub parse_file {
   my($class,$file)=@_;
   $file=U::path($file) unless ref($file);
   local(@_)=$file->lines;
+  chomp(@_);
+#      say STDERR for @_;
   if(substr($_[0],0,1) eq 'l'){
-    @cols=map { split m{[\t\n]} } shift;
+    @cols=map { split m{[\t]} } shift;
   };
   @_=parse_lines(@_);
   $_->{page}=$file->basename(".tsv") for @_;
@@ -95,8 +119,10 @@ sub parse_file {
 }
 sub parse_lines {
   shift if $_[0]->isa(__PACKAGE__);
-  $_=[split m{[\t\n]}] for grep { !ref } @_;
+  chomp(@_);
+  $_=[split m{[\t]}] for grep { !ref } @_;
   @_=hash(@_);
+#      say scalar(@_), " lines parsed ";
   @_;
 };
 sub load_file {
@@ -107,6 +133,8 @@ sub word {
   return [ shift ];
 };
 sub text {
-  return shift->{text};
+  local($_)=shift->{text};
+  U::eex($_) if m{hash[(]0};
+  $_;
 };
 1;

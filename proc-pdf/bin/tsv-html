@@ -22,10 +22,8 @@ $|++;
 
 sub invest {
   local(@_)=@_;
-  my(@lr)=map { $_->rect, $_->text } @_;
-  eex(\@lr);
   for(@_) {
-    $_->pack;
+    say $_->text;
   };
 };
 sub main {

@@ -21,64 +21,74 @@ sub new {
   local(@_)=@_;
   my($class)=shift;
   my(@word)=splice(@_);
-  my($rect) = @word[0]->{rect}->clone() if @word;
-  my($self)=$class->SUPER::new(rect=>$rect);
+  my($self)=$class->SUPER::new();
   $self->{word}=\@word;
-  $self->pack;
+  my($y1,$y2)=($self->y1,$self->y2);
+  $_->{rect}->{y1}=$y1 for @word;
+  $_->{rect}->{y2}=$y2 for @word;
   $self;
 };
-sub pack {
-  my($self)=$_[0];
-  #  U::eex($self);
-  $self->{rect}=TsvRect->union(
-    map { $_->rect } ($self->{rect}, @{$self->{text}})
-  ); 
-  #  for(@{$self->word}){
-  #  U::eex $_;
-  #};
-  $self->{rect};
-}
+sub refCount {
+  my(%cnt);
+  for(@_) {
+    my($ref)=ref;
+    $cnt{$ref}++;
+  }
+  \%cnt;
+};
 sub from {
   local(@_)=@_;
   my($class)=U::class(shift);
+  @_=grep { defined and  $_->{level} == 5 } @_;
   if(grep { ref($_) eq 'HASH' } @_){
     @_=TsvWord->from(@_);
   };
-  my(@other)=grep { defined and $_->level != 5 } @_;
-  @_=grep { defined and  $_->level == 5 } @_;
   @_=vsort @_;
   my(@line);
   while(@_){
     my(@tmp)=TsvUtil::group_find(\@_);
     push(@line,TsvLine->new(@tmp));
   };
-  @line=vsort(@line,@other);
   @line;
 };
-sub extra {
-  local(@_)=@_;
-  my($self)=shift;
-  my($width)=$self->width;
-  my($word)=$self->word;
-  for(@$word){
-    $width-=($_->width);
-  };
-  $width;
+sub left {
+  U::min(map { $_->left } @{shift->word});
+}
+sub top {
+  U::min(map { $_->top } @{shift->word});
+}
+sub right {
+  U::max(map { $_->right } @{shift->word});
+}
+sub bottom {
+  U::max(map { $_->bottom } @{shift->word});
+}
+sub width {
+  U::max(map { $_->width } @{shift->word});
+};
+sub height {
+  U::max(map { $_->height } @{shift->word});
 };
 sub load_file {
   my($self)=shift;
   my(@word)=TsvWord->load_file(@_);
+  for(@word) {
+    die "needed words, got ",U::pp($_) unless ref($_) eq 'TsvWord';
+  };
   my(@line)=TsvLine->from(@word);
   @line;
 };
 sub word {
   my($self)=$_[0];
-  return $self->{word};
+  if(defined($_[1])){
+    return $self->word->[$_[1]];
+  } else {
+    return $self->{word};
+  };
 }
 sub text {
   my($self)=$_[0];
-  my($word)=$self->word($_[1]);
-  my(@text)=map { $_->{text} } @$word;
-  join(" ",@text);
+  local($_)=join(" ",map { $_->text } @{$self->word});
+  $_;
 };
 1;

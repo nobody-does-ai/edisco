@@ -205,7 +205,7 @@ sub tsv_combine {
   \%off;
 };
 sub vhcmp {
-  eex( [ $a, $b ] );
+  eex( map { ref } ($a,$b) );
   return (
     $a->{page} <=> $b->{page}
       or
@@ -236,18 +236,15 @@ sub group_find {
   local(@_)=@_;
   local(*_)=shift;
   return unless @_;
-  if($_[0]->text eq "POLLOCK"){
-    return shift;
-  };
+  my($i)=0;
   my(@word)=shift;
-  my($bot)=$word[0]->bottom;
-  while(@_ and ($_[0]->cy<$bot)) {
+  my($bot)=$word[0]->y2;
+  while(@_ and $_[0]->cy<$bot) {
     my($word)=shift;
     push(@word,$word);
-    $bot=max($bot,$word->bottom);
-  };
-  @word = sort { $a->left <=> $b->left } @word;
-  @word;
+    $bot=$word->y2 if $bot<$word->y2;
+  }
+  sort { $a->x1 <=> $b->x1 } @word;
 };
 my(%pid);
 sub run {

@@ -14,6 +14,21 @@ our(@VERSION) = qw( 0 1 0 );
 
 use Path::Tiny;
 our(%marker);
+sub show {
+  return;
+  my($pg,$ln)=(shift,shift);
+  for my $word(@_) {
+    eex( { a=>$pg, b=>$ln, y=>{ map { $_, $word->$_() } qw( y1 y2 dy ) } } );
+    eex( $word->text() );
+  };
+};
+sub count {
+  our(%cnt);
+  for(@_) {
+    $cnt{+refaddr($_)}++;
+  };
+  eex(%cnt);
+};
 sub main
 {
   local($SIG{__DIE__})=sub { $DB::single=1; die @_; };
@@ -22,31 +37,50 @@ sub main
   eval {
     dbh->do("delete from tsv");
   };
-
-  my(%trig);
-  $trig{INVESTMENTS}=2;
-  $trig{TRANSACTIONS}=2;
-  $trig{Page}=1;
-  for my $p(keys @page) {
-    my(@all);
-    my($page)=$page[$p];
-    $p+=1000;
+  my(@all);
+  for my $pg(keys @page) {
+    my($page)=$page[$pg];
+    $pg+=1000;
+#        eex( { page=>$page } );
+#      $DB::single++; 
+    eex( "loading: ", $page );
     my(@line)=TsvLine->load_file($page);
-    my($i)=1000;
     for(@line) {
-      my(@word)=@{$_->word};
-      ++$i;
-      for (@word){
-        $_->{line}=$i;
-        $_->{page}=$p;
+      my ($word)= scalar(@{$_->word});
+      if($word>50) {
+        my(%data);
+        for(@{$_->{word}} ) {
+          $data{level}{$_->{level}}++;
+          $data{top}{$_->top()}++;
+          $data{height}{$_->height()}++;
+          $data{bottom}{$_->bottom()}++;
+          $data{page}{$_->page()}++;
+        };
+#            eex(\%data);
       }
-      push(@all,@word);
+#          eex($word);
     };
-    say scalar(@all);
-    say scalar(@all);
-    @all=TsvUtil::vsort(@all);
-    tsv_insert(@all);
+#        eex({line=>scalar(@line)});
+    for my $ln(0 .. $#line) {
+      my($line)=$line[$ln];
+      my(@word)=@{$line->word};
+      my(@lord)=($line,@word);
+
+      $ln+=$pg*1000;
+      $line->{level}=4;
+      my($y1)=$line->y1;
+      my($y2)=$line->y2;
+      for(@lord){
+        $_->{page}=$pg;
+        $_->{line}=$ln;
+        die if grep { $_->y1 != $y1 } @lord;
+        die if grep { $_->y2 != $y2 } @lord;
+      };
+      push(@all,splice(@word));
+    };
   };
+  say scalar(@all);
+  tsv_insert(@all);
 
   dbh->disconnect;
 };

@@ -30,9 +30,9 @@ BEGIN {
     $body//=join(", ", map { "?" } @head);
     state($sql);
     $sql//="COPY tsv_tmp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
+    dbh->do("delete from tsv_tmp");
     state($sth);
     $sth//=dbh->prepare($sql);
-    dbh->do("delete from tsv_tmp");
     for (@_){
       my($word)=$_;
       my($rect)=$word->{rect};
@@ -52,9 +52,7 @@ BEGIN {
     $sth->execute();
     dbh->pg_putcopydata(join("\n",@_,""));
     dbh->pg_endcopy();
-    dbh->do("insert into tsv_tmp ( $head ) ( select * from tsv_raw )" );
-    dbh->do("insert into tsv_raw ( $head ) ( select  from tsv_tmp_view ) on conflict do nothing");
-    eex( dbh->selectrow_hashref("select count(*) from tsv") );
+    dbh->do( "delete from tsv; insert into tsv (select * from tsv_tmp_v order by tsv );");
   };
   sub tsv_fetch {
     local(@_)=@_;
