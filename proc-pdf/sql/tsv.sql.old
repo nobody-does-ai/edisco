@@ -123,7 +123,7 @@ ALTER TABLE public.tsv_pairs OWNER TO nn;
 -- Name: tsv_range; Type: VIEW; Schema: public; Owner: nn
 --
 
-CREATE VIEW public.tsv_range AS
+CREATE or replace VIEW public.tsv_range AS
  SELECT tsv.tsv,
     tsv.level,
     tsv.page,
@@ -139,7 +139,10 @@ CREATE VIEW public.tsv_range AS
     tsv.text
    FROM public.tsv,
     public.tsv_pairs
-  WHERE ((tsv.tsv >= tsv_pairs.tsv0) AND (tsv.tsv <= tsv_pairs.tsv1));
+  WHERE ((tsv.tsv >= tsv_pairs.tsv0) AND (tsv.tsv <= tsv_pairs.tsv1))
+  and tsv_pairs.prim = 1
+  order by tsv
+  ;
 
 
 ALTER TABLE public.tsv_range OWNER TO nn;
