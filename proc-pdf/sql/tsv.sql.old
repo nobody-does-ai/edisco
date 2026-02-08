@@ -2,6 +2,7 @@
 -- PostgreSQL database dump
 --
 
+\restrict VIHfjvUcHOlOLz2BtZse3D1J6HvR77habzHslS2bhFPXW1lFyfHeVr5eztNwd8h
 
 -- Dumped from database version 15.15 (Debian 15.15-0+deb12u1)
 -- Dumped by pg_dump version 15.15 (Debian 15.15-0+deb12u1)
@@ -119,6 +120,31 @@ CREATE VIEW public.tsv_pairs AS
 ALTER TABLE public.tsv_pairs OWNER TO nn;
 
 --
+-- Name: tsv_range; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_range AS
+ SELECT tsv.tsv,
+    tsv.level,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.y1,
+    tsv.y2,
+    tsv.x1,
+    tsv.x2,
+    tsv.conf,
+    tsv.text
+   FROM public.tsv,
+    public.tsv_pairs
+  WHERE ((tsv.tsv >= tsv_pairs.tsv0) AND (tsv.tsv <= tsv_pairs.tsv1));
+
+
+ALTER TABLE public.tsv_range OWNER TO nn;
+
+--
 -- Name: tsv_tmp; Type: TABLE; Schema: public; Owner: nn
 --
 
@@ -216,4 +242,5 @@ ALTER TABLE ONLY public.msg
 -- PostgreSQL database dump complete
 --
 
+\unrestrict VIHfjvUcHOlOLz2BtZse3D1J6HvR77habzHslS2bhFPXW1lFyfHeVr5eztNwd8h
 
