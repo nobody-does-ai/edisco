@@ -1,0 +1,16 @@
+#!/bin/bash
+
+regen-db () 
+{ 
+  set -x
+    git commit -m pre-regen sql
+    dropdb nn;
+    createdb nn;
+    psql < tsv.sql;
+    mv sql/tsv.sql sql/tsv.sql.old
+    pg_dump -s nn | egrep -v '^\\(un|)restrict' > sql/tsv.sql;
+    git commit -m post-regen sql
+    bin/tsv-pg;
+}
+return 2>/dev/null
+regen-db "$@"
