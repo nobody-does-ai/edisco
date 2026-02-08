@@ -142,6 +142,7 @@ sub dbh {
         };
         push(@db_head, $_);
       };
+      unshift(@db_head,"y","q");
     };
     if($_[0] eq 'db') {
       return @db_head;
@@ -188,7 +189,7 @@ sub line_fetch {
 };
 unless(caller(0)){
 #      eex(page_insert);
-  eex( tsv_fetch_range );
+#      eex( tsv_fetch_range );
 #      eex(dsn);
 #      eex(dbh);
 #      eex(head('db'));

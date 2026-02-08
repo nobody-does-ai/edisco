@@ -32,54 +32,32 @@ sub count {
 sub main
 {
   local($SIG{__DIE__})=sub { $DB::single=1; die @_; };
-  local($SIG{__WARN__})=sub { $DB::single=1; die @_; };
-  my(@page)=map{path($_)}sort glob("tsv/202?-Q?-???.tsv");
+  local($SIG{__WARN__})=sub { $DB::single=1; warn @_; };
   eval {
     dbh->do("delete from tsv");
   };
+  my(%page)=map{$_,{path=>path($_)}}sort glob("tsv/202?-Q?-???.tsv");
+  for( values %page ) {
+    $_=[map { 0+$_ || $_ } split(m{[/.-]Q?}, path($_->{path})->basename(".tsv")),$_->{path}];
+  }
   my(@all);
-  for my $pg(keys @page) {
-    my($page)=$page[$pg];
-    $pg+=1000;
-#        eex( { page=>$page } );
-#      $DB::single++; 
-    eex( "loading: ", $page );
-    my(@line)=TsvLine->load_file($page);
-    for(@line) {
-      my ($word)= scalar(@{$_->word});
-      if($word>50) {
-        my(%data);
-        for(@{$_->{word}} ) {
-          $data{level}{$_->{level}}++;
-          $data{top}{$_->top()}++;
-          $data{height}{$_->height()}++;
-          $data{bottom}{$_->bottom()}++;
-          $data{page}{$_->page()}++;
-        };
-#            eex(\%data);
-      }
-#          eex($word);
+  my(%seen);
+  for my $pg(sort keys %page) {
+    my($prec)=$page{$pg};
+    my($y,$q,$p,$page)=@{$prec};
+#        eex({p=> $p});
+    my(@word)=TsvWord->load_file($page);
+    for(@word){
+      $_->{y}=$y;
     };
-#        eex({line=>scalar(@line)});
-    for my $ln(0 .. $#line) {
-      my($line)=$line[$ln];
-      my(@word)=@{$line->word};
-      my(@lord)=($line,@word);
 
-      $ln+=$pg*1000;
-      $line->{level}=4;
-      my($y1)=$line->y1;
-      my($y2)=$line->y2;
-      for(@lord){
-        $_->{page}=$pg;
-        $_->{line}=$ln;
-        die if grep { $_->y1 != $y1 } @lord;
-        die if grep { $_->y2 != $y2 } @lord;
-      };
-      push(@all,splice(@word));
+    for(@word) {
+      $_->{page}=$p;
+      $_->{y}=$y;
+      $_->{q}=$q;
     };
+    push(@all,splice(@word));
   };
-  say scalar(@all);
   tsv_insert(@all);
 
   dbh->disconnect;

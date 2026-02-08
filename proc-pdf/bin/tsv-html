@@ -34,7 +34,7 @@ sub main {
   say scalar(@range);
   for(@range){
     local(*_)=$_->{tsv};
-    my(@line)=grep { ref($_) eq 'TsvLine' } TsvLine->from(@_);    
+    my(@line)=grep { ref($_) ne 'TsvLine' } TsvLine->from(@_);
     if($line[0]->text(0) eq 'INVESTMENTS') {
       invest(@line);
     };

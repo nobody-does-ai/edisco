@@ -37,7 +37,6 @@ sub new {
   };
 #      U::eex( \$self);
   return () if $self->{level}==5 and $self->{text} !~ m{\S};
-  return () if $self->{level}==5 and $self->{rect}->dy > 100;
   $self=$class->SUPER::new(%$self);
   warn U::pp($self) if $self->{text} =~ m@Hash@;
   if($self->{text} =~ m{ }){
