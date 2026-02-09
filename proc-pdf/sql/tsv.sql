@@ -17,6 +17,22 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: acct; Type: TABLE; Schema: public; Owner: nn
+--
+
+CREATE TABLE public.acct (
+    acct integer NOT NULL,
+    title text
+);
+
+
+ALTER TABLE public.acct OWNER TO nn;
+
 --
 -- Name: marker_text; Type: VIEW; Schema: public; Owner: nn
 --
@@ -37,10 +53,6 @@ UNION
 
 ALTER TABLE public.marker_text OWNER TO nn;
 
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
 --
 -- Name: msg; Type: TABLE; Schema: public; Owner: nn
 --
@@ -60,7 +72,7 @@ ALTER TABLE public.msg OWNER TO nn;
 CREATE TABLE public.tsv (
     tsv bigint,
     level integer,
-    page integer,
+    page text,
     block integer,
     par integer,
     line integer,
@@ -123,7 +135,8 @@ ALTER TABLE public.tsv_pairs OWNER TO nn;
 --
 
 CREATE VIEW public.tsv_range AS
- SELECT tsv.tsv,
+ SELECT tsv_pairs.tsv0 AS rid,
+    tsv.tsv,
     tsv.level,
     tsv.page,
     tsv.block,
@@ -175,7 +188,7 @@ ALTER TABLE public.tsv_tmp OWNER TO nn;
 CREATE VIEW public.tsv_tmp_v AS
  SELECT rank() OVER (ORDER BY tsv_tmp.y, tsv_tmp.q, tsv_tmp.page, tsv_tmp.y1, tsv_tmp.x1, tsv_tmp.level) AS tsv,
     tsv_tmp.level,
-    dense_rank() OVER (ORDER BY tsv_tmp.y, tsv_tmp.q, tsv_tmp.page) AS page,
+    (((tsv_tmp.y * 1000) + (tsv_tmp.q * 100)) + tsv_tmp.page) AS page,
     tsv_tmp.block,
     tsv_tmp.par,
     tsv_tmp.line,
@@ -207,28 +220,27 @@ ALTER TABLE public.msg ALTER COLUMN msg ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
--- Name: words; Type: VIEW; Schema: public; Owner: nn
+-- Name: xact; Type: TABLE; Schema: public; Owner: nn
 --
 
-CREATE VIEW public.words AS
- SELECT tsv.tsv,
-    tsv.level,
-    tsv.page,
-    tsv.block,
-    tsv.par,
-    tsv.line,
-    tsv.word,
-    tsv.y1,
-    tsv.y2,
-    tsv.x1,
-    tsv.x2,
-    tsv.conf,
-    tsv.text
-   FROM public.tsv
-  WHERE (tsv.level = 5);
+CREATE TABLE public.xact (
+    acct integer,
+    date date,
+    text text,
+    amnt double precision,
+    xact integer
+);
 
 
-ALTER TABLE public.words OWNER TO nn;
+ALTER TABLE public.xact OWNER TO nn;
+
+--
+-- Name: acct acct_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
+--
+
+ALTER TABLE ONLY public.acct
+    ADD CONSTRAINT acct_pkey PRIMARY KEY (acct);
+
 
 --
 -- Name: msg msg_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
