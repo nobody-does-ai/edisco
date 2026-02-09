@@ -224,15 +224,29 @@ ALTER TABLE public.msg ALTER COLUMN msg ADD GENERATED ALWAYS AS IDENTITY (
 --
 
 CREATE TABLE public.xact (
+    xact integer NOT NULL,
     acct integer,
     date date,
     text text,
-    amnt double precision,
-    xact integer
+    amnt double precision
 );
 
 
 ALTER TABLE public.xact OWNER TO nn;
+
+--
+-- Name: xact_xact_seq; Type: SEQUENCE; Schema: public; Owner: nn
+--
+
+ALTER TABLE public.xact ALTER COLUMN xact ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.xact_xact_seq
+    START WITH 100000000
+    INCREMENT BY 1
+    MINVALUE 100000000
+    MAXVALUE 999999999
+    CACHE 1
+);
+
 
 --
 -- Name: acct acct_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
@@ -248,6 +262,14 @@ ALTER TABLE ONLY public.acct
 
 ALTER TABLE ONLY public.msg
     ADD CONSTRAINT msg_pkey PRIMARY KEY (msg);
+
+
+--
+-- Name: xact xact_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
+--
+
+ALTER TABLE ONLY public.xact
+    ADD CONSTRAINT xact_pkey PRIMARY KEY (xact);
 
 
 --
