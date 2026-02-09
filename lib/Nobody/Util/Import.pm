@@ -29,7 +29,7 @@ BEGIN {
   open_fds      deparse      maybeRef  dump_obj
   file_id       WNOHANG      uniq      matrix    
   dirname       capture      safe_can child_wait
-  safe_isa      
+  safe_isa      nsort
   );
   {
     my %subs;

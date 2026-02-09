@@ -26,18 +26,96 @@ sub invest {
     say $_->text;
   };
 };
+sub nsort {
+  sort { $a <=> $b } @_;
+};
 sub main {
   my(@tsv)=map { path($_) } glob("tsv/202?-Q?-???.tsv");
   my($tsv,$png,@img);
-  our(@range);
-  local(@range)=@{tsv_fetch_range()};
-  say scalar(@range);
-  for(@range){
-    local(*_)=$_->{tsv};
-    my(@line)=grep { ref($_) ne 'TsvLine' } TsvLine->from(@_);
-    if($line[0]->text(0) eq 'INVESTMENTS') {
-      invest(@line);
+  our(%range);
+  local(*range)=dbh->selectall_hashref("select * from tsv_range r where level=5 order by rid, tsv",["rid","tsv"]);
+  say scalar(%range);
+  my(@tr,@in);
+  for my $rid(nsort keys %range){
+    my($range)=$range{$rid};
+    my(@range)=sort { $a <=> $b } keys %$range;
+    @range=map { $range{$rid}{$_} } @range;
+    @range = TsvUtil::vsort(@range);
+    my(@word)=TsvWord->from(@range);
+    my(@line)=TsvLine->from(@word);
+    if(substr($line[0]->text,0,1)eq'T') {
+      push(@tr,[@line]);
+    } elsif (substr($line[0]->text,0,1)eq'I') {
+      push(@in,[@line]);
+    } else {
+      warn $line[0]->text;
     };
+  };
+  transact(@tr);
+}
+sub transact {
+  my(@tr)=@_;
+  my(@data);
+  for(0 .. $#tr) {
+    local($_)=$tr[$_];
+    local(*_)=$_;
+    my($mark)=shift;
+    my($min_y2,$max_y1);
+    my($head)=shift;
+    die "bad rnage" unless $head->text eq "Date Description Amount";
+    my $rule1=${head}->word(0)->right;
+    my $rule2=${head}->word(1)->left;
+    my $rule3=${head}->word(1)->right;
+    my $rule4=${head}->word(2)->left;
+    my $rule5=${head}->word(2)->right-5;
+
+    my(%trig)=(
+      qw(
+      TRANSACTION 1
+      INVESTMENT 1
+      INSURED 1
+      Page 1
+      Program 1
+      )
+    ); 
+    my($last);
+    for(@_) {
+      my(@word)=@{$_->word};
+      if(@word>1 and $_->word(1)->text =~ m{Ara|Shirley}){
+        unshift(@data,[{acct=>$_->text(0),desc=>$_->text()}]);
+      } elsif ($trig{$_->text(0)}) {
+        last;
+      } elsif(($_->left < $rule1 or $_->right >= $rule5)and scalar(@{$_->word()})>2 ) {
+        local(*_)=$_->word;
+        my(%data);
+        $data{date}=join(" ", map { $_->text } shift);
+        $data{left}=$_->left;
+        if($_->right >= $rule5-50) {
+          $data{amnt}=join(" ",map{ s{,}{}g; $_ } map { $_->text } pop);
+        } else {
+          $data{amnt}=0;
+        };
+        $data{desc}=join(" ",map { $_->text } @_);
+        $last=\%data;
+        push(@{$data[0]},\%data);
+      } else {
+        local(*_)=$_->word;
+        $last->{desc}=join("\n",$last->{desc},join(" ",map { $_->text } @_));
+      };
+    };
+  };
+  my(%acct);
+  my ($sth_a)=dbh->prepare("insert into acct (acct,title) values (?,?) on conflict do nothing;");
+  my ($sth_t)=dbh->prepare("insert into xact (acct,date,text,amnt) values (?,?,?,?)");
+  for(@data) {
+    my($obj)=shift @$_;
+    my($acct)=$obj->{acct};
+    $sth_a->execute($acct,$obj->{desc});
+    for(@$_){
+      $_->{amnt} =~ s{A}{4}g;
+      $_->{date} =~ s{^1212}{12/2};
+      $sth_t->execute($acct,$_->{date},$_->{desc},$_->{amnt});
+    };    
   };
 }
 

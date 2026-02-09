@@ -21,7 +21,8 @@ our(%file);
 # this gathers all the modules used and puts them into
 # the lib directory.  not normally needed, should be
 # commented out.
-#require "$ENV{HOME}/stow/ex-code/gather.pl";
+#    use lib "gather";
+#    require "$ENV{HOME}/stow/ex-code/gather.pl";
 sub main;
 #    @ARGV=glob("src/2024-Q4.pdf") unless @ARGV;
 @ARGV=glob("src/202?-Q?.pdf") unless @ARGV;
@@ -36,12 +37,24 @@ sub main {
   local(@_)=@_;
   my(@tsv);
   system("rm -fr pdf tsv png");
+  my(@pid,@log);
   for my $pdf(@_) {
     my($tsv)=path(grep { s{(pdf|src)}{tsv}g } $pdf->stringify);
     my($log)=path(grep { s{(pdf|src)}{log}g } $pdf->stringify);
-      local(@_);
-      @_=pdf_to_pgs($pdf);
-      @_=pdf_to_png(@_);
-      @_=png_to_tsv(@_);
+    push(@log,$log);
+    if(my $pid=fork) {
+      push(@pid,$pid);
+      next;
+    };
+    path("log")->mkdir;
+    open(STDOUT,">$log");
+    open(STDERR,">&STDOUT");
+    local(@_);
+    @_=pdf_to_pgs($pdf);
+    @_=pdf_to_png(@_);
+    @_=png_to_tsv(@_);
+    exit(0);
   };
+  system("tail -f @log&");
+  child_wait;
 } 

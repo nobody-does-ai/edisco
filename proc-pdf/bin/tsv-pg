@@ -7,6 +7,10 @@ use DBD::Pg qw(:pg_types); # Required for PGRES constants if needed
 use Nobody::Util;
 use Nobody::PP;
 use TsvDB;
+use GD::Image;
+use GD;
+use GDUtil;
+use TsvUtil qw(group_find);
 
 $|++;
 
@@ -29,8 +33,31 @@ sub count {
   };
   eex(%cnt);
 };
+sub hgroup_find {
+  local(@_)=@_;
+  local(*_)=shift;
+  return unless @_;
+  my($i)=0;
+  my(@word)=shift;
+  my($right)=$word[0]->x2;
+  while(@_ and $_[0]->cx<$right) {
+    my($word)=shift;
+    push(@word,$word);
+    $right=$word->x2 if $right<$word->x2;
+  }
+  sort { $a->x1 <=> $b->x1 } @word;
+};
+sub png {
+  return path("png")->child($_[0]->basename(".tsv").".png");
+};
+sub img {
+  return undef;# GD::Image->newFromPng("$_[0]");
+};
+my($log);
 sub main
 {
+  $log=path("trash.log");
+  my(@l);
   local($SIG{__DIE__})=sub { $DB::single=1; die @_; };
   local($SIG{__WARN__})=sub { $DB::single=1; warn @_; };
   eval {
@@ -42,24 +69,74 @@ sub main
   }
   my(@all);
   my(%seen);
+  my($l)=0;
+  my(%trash);
+  for(qw( ll I lo] e eo ] [ ifaveclized )) {
+    $trash{$_}=1;
+  };
+  {
+    my($txt)=chr(0xc2).chr(0xa2);
+    $trash{$txt}=1;
+  };
   for my $pg(sort keys %page) {
     my($prec)=$page{$pg};
     my($y,$q,$p,$page)=@{$prec};
-#        eex({p=> $p});
     my(@word)=TsvWord->load_file($page);
-    for(@word){
-      $_->{y}=$y;
+    for(@word) {
+      while($_->y1 %2) {
+        $_->{rect}->{y1}--;
+        $_->{rect}->{y2}++;
+      };
+      while($_->y2 %2) {
+        $_->{rect}->{y2}++;
+      };
     };
-
+    my($png)=png($page);
+    @word = grep { defined and $_->level==5 } @word;
+    my($img)=img($png);
+    for(@word) {
+      $seen{$_->{conf}=int($_->{conf})}++;
+      if($_->{conf}<70) {
+        if($_->text eq "(continue)") {
+          $_->{conf}=90;
+          $_->{text}="(CONTINUED)";
+        };
+        say $_->{text};
+        if($trash{$_->{text}}){
+          push(@l,pp( [ $_ ] ));
+          $_=undef;
+        };
+      }    
+      eex($_->text) if defined and $_->{conf} < 20 and $_->{conf}>0;
+    };
+    @word = grep { (blessed($_) or eex($_)) and defined and $_->level==5 } @word;
     for(@word) {
       $_->{page}=$p;
       $_->{y}=$y;
       $_->{q}=$q;
     };
+    my($width)=$word[0]->width;
+    my(@line);
+    if($word[0]->text eq "POLLOCK") {
+      local(@_)=shift(@word);
+      push(@line,TsvLine->from(@_));
+    };
+    push(@line,TsvLine->from(@word));
+    my(@w);
+    my($last);
+    for my $line(@line)
+    {
+      $line->{line}=++$l;
+      for(@{$line->word}){
+        $_->{line}=$l;
+        push(@w,$_);
+      };
+    };
+    say scalar(@w)," ",scalar(@word);
     push(@all,splice(@word));
   };
   tsv_insert(@all);
-
+  $log->spew(\@l);
   dbh->disconnect;
 };
 

@@ -23,9 +23,9 @@ sub new {
   my(@word)=splice(@_);
   my($self)=$class->SUPER::new();
   $self->{word}=\@word;
-  my($y1,$y2)=($self->y1,$self->y2);
-  $_->{rect}->{y1}=$y1 for @word;
-  $_->{rect}->{y2}=$y2 for @word;
+#      my($y1,$y2)=($self->y1,$self->y2);
+#      $_->{rect}->{y1}=$y1 for @word;
+#      $_->{rect}->{y2}=$y2 for @word;
   $self;
 };
 sub refCount {
@@ -88,7 +88,12 @@ sub word {
 }
 sub text {
   my($self)=$_[0];
-  local($_)=join(" ",map { $_->text } @{$self->word});
+  my(@word)=$self->word($_[1]);
+  if(ref($word[0])eq'ARRAY'){
+    return join(" ",map { $_->text } @{$word[0]});
+  } else {
+    return $word[0]->text;
+  };
   $_;
 };
 1;

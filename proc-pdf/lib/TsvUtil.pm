@@ -204,7 +204,6 @@ sub tsv_combine {
   \%off;
 };
 sub vhcmp {
-  eex( map { ref } ($a,$b) );
   return (
     $a->{page} <=> $b->{page}
       or
@@ -243,6 +242,16 @@ sub group_find {
     push(@word,$word);
     $bot=$word->y2 if $bot<$word->y2;
   }
+  my($max_y1)=max(map { $_->y1 } @word);
+  my($min_y2)=min(map { $_->y2 } @word);
+  eex( $max_y1, $min_y2, join(" ", map { $_->text } @word) ) if $max_y1>$min_y2;  
+#      {
+#        my @tmp = sort { $b->dy <=> $a->dy } @word;
+#        for(@tmp) {
+#          say STDERR $_->dy, " ", $_->text;
+#        };
+#        say STDERR;
+#      };
   sort { $a->x1 <=> $b->x1 } @word;
 };
 my(%pid);

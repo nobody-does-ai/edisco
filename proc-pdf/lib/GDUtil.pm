@@ -3,7 +3,6 @@ use Nobody::Util;
 use GD::Image;
 our(@EXPORT)=qw( slice_y stack_slices );
 use base 'Exporter';
-
 sub slice_y {
   my ($im, $c, $y1, $y2) = @_;
   die "slice_y: empty slice (y1=$y1 y2=$y2)" unless $y2>$y1;
@@ -14,7 +13,10 @@ sub slice_y {
   $r->copy($im,0,0,0,$y1,$w,$h);
   return $r;
 }
-
+sub render_text {
+  local(@_)=@_;
+  my($text)=join("\r\n",split(m{\r?\n},"@_"));
+};
 sub stack_slices {
   local (@_) = @_;
   die "stack_slices: need at least one slice" unless @_;
@@ -36,4 +38,7 @@ sub stack_slices {
   };
   return $r;
 }
+unless(caller){
+  eex(render_text(path("lib/GDUtil.pm")->lines));
+};
 1;

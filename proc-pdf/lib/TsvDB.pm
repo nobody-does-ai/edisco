@@ -62,37 +62,7 @@ BEGIN {
   }
   sub tsv_fetch_range {
     my($time)=time;
-    my(%range)=%{dbh->selectall_hashref("select * from tsv_range r","rid")};
-    say STDERR sprintf "range loaded: %f", $time-time;
-    for(values %{range}){
-      $_->{where}=sprintf("(tid >= %8d and tid <= %8d)",$_->{tid1},$_->{tid2});
-    };
-    my($where)=join("\nor\n", map { $_->{where} } values %{range});
-    $time=time;
-    my(%tsv)=%{dbh->selectall_hashref("select * from tsv_order where $where","tid")};
-    say STDERR sprintf "tsvs loaded: %f", $time-time;
-    my (@range)=sort { $a->{rid} <=> $b->{rid} } values %range;
-    my($r)=0;
-    my ($range)=$range[$r++];
-    for(sort { $a <=> $b } keys %tsv) {
-      if($range->{tid1}> $_) {
-        die "something wrong", pp($range, $_);
-      };
-      while($range->{tid2}<$_) {
-        $range=$range[$r++];
-        die "ran out of ranges" unless defined $range;
-      }
-      push(@{$range->{tsv}},delete $tsv{$_});
-    };
-    for my $range(@range) {
-      for( $range->{tsv} ) {
-        @$_=sort { $a->{tid} <=> $b->{tid} } @$_;
-      };
-      local(*_)=$range->{tsv};
-      die "soemthing wrong: ", pp($range) if($_[0]->{tsv}{tid} < $range->{tsv1});
-      die "soemthing wrong: ", pp($range) if($_[$#_]->{tsv}{tid} > $range->{tsv2});
-    };
-    \@range;
+    dbh->selectall_hashref("select * from tsv_range r",["rid","tsv"]);
   };
 };
 #    {

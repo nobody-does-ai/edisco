@@ -18,7 +18,8 @@ use vars qw($coder);
 use feature qw(signatures);
 our(@VERSION) = qw( 0 1 0 );
 sub main {
-  my($tgt)=qr{macro.*strategies.*fund}i;
+  my($txt)=chr(0xc2).chr(0xa2);
+  my($tgt)=qr{$txt};
   my(@tsv)=glob("tsv/*.tsv");
   my(%tgt);
   for my $tsv(map { path($_) } @tsv) {
@@ -30,33 +31,22 @@ sub main {
       $a->top <=> $b->top
         or
       $a->left <=> $b->left
-        or
-      refaddr($a) <=> refaddr($b)
     } @word;
-    my($inv)=grep { $word[$_]->text eq 'INVESTMENTS' } 0 .. $#word;
-    next unless defined $inv;
-    my($trn)=grep {  $word[$_]->text eq 'TRANSACTIONS' } 0 .. $#word;
-    $trn//=$#word;
-    @word=@word[$inv..$trn];
     @word=TsvLine->from(@word);
     @word=grep { defined } @word;
     @word=grep { $_->text =~ m{$tgt} } @word;
     for(@word) {
       $tgt{$png}//=[undef];
       my($txt)=$_->text;
-      my(@num);
-      for($txt) {
-        s{ETF(.*)}{ETF}i;
-        @num=map { split } $1;
-        unshift(@num,scalar(@num));
-      };
-      push(@{$tgt{$png}}, { top=>($_->top-10), bot=>($_->bottom-5), txt=>$txt, num=>\@num });
+      push(@{$tgt{$png}}, { top=>($_->top-10), bot=>($_->bottom-5), line=>$_});
     };
   }
   our(%slc,@slc);
   for my $png(keys %tgt) {
     local(*_)=$tgt{$png};
-    my($img)=$_[0]=GD::Image->newFromPng("$png",1);
+    my($img);
+
+    $img=$_[0]=GD::Image->newFromPng("$png",1);
     for(1 .. $#_) {
       local(*slc)=$_[$_]; 
       next if $slc{num}[0]==5;

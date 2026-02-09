@@ -28,6 +28,9 @@ BEGIN {
 sub basename {
   path(shift)->basename(@_);
 };
+sub nsort {
+  return sort { $a <=> $b } @_;
+}
 sub getfl(*) {
   my($fh)=shift;
   my($val);
