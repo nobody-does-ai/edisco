@@ -141,6 +141,8 @@ CREATE VIEW public.tsv_range AS
  SELECT tsv_pairs.tsv0 AS rid,
     tsv.tsv,
     tsv.level,
+    tsv.year,
+    tsv.quarter,
     tsv.page,
     tsv.block,
     tsv.par,
@@ -151,7 +153,8 @@ CREATE VIEW public.tsv_range AS
     tsv.x1,
     tsv.x2,
     tsv.conf,
-    tsv.text
+    tsv.text,
+    tsv.reject
    FROM public.tsv,
     public.tsv_pairs
   WHERE ((tsv.tsv >= tsv_pairs.tsv0) AND (tsv.tsv <= tsv_pairs.tsv1) AND (tsv_pairs.prim = 1) AND (tsv.reject = 0))
@@ -204,7 +207,8 @@ CREATE VIEW public.tsv_tmp_v AS
     tsv_tmp.x1,
     (tsv_tmp.dx + tsv_tmp.x1) AS x2,
     tsv_tmp.conf,
-    tsv_tmp.text
+    tsv_tmp.text,
+    tsv_tmp.reject
    FROM public.tsv_tmp
   ORDER BY tsv_tmp.y, tsv_tmp.q, tsv_tmp.page, tsv_tmp.y1, tsv_tmp.x1, tsv_tmp.level;
 
