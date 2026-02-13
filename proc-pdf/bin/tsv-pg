@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+use lib "lib";
 use common::sense;
 use autodie;
 use DBI;
@@ -53,10 +54,9 @@ sub png {
 sub img {
   return undef;# GD::Image->newFromPng("$_[0]");
 };
-my($log);
+my(%trash);
 sub main
 {
-  $log=path("trash.log");
   my(@l);
   local($SIG{__DIE__})=sub { $DB::single=1; die @_; };
   local($SIG{__WARN__})=sub { $DB::single=1; warn @_; };
@@ -68,48 +68,49 @@ sub main
     $_=[map { 0+$_ || $_ } split(m{[/.-]Q?}, path($_->{path})->basename(".tsv")),$_->{path}];
   }
   my(@all);
-  my(%seen);
   my($l)=0;
-  my(%trash);
   for(qw( ll I lo] e eo ] [ ifaveclized )) {
-    $trash{$_}=1;
+    $trash{$_}=[];
   };
   {
     my($txt)=chr(0xc2).chr(0xa2);
-    $trash{$txt}=1;
+    $trash{$txt}=[];
   };
   for my $pg(sort keys %page) {
     my($prec)=$page{$pg};
     my($y,$q,$p,$page)=@{$prec};
+    eex($page);
     my(@word)=TsvWord->load_file($page);
-    for(@word) {
-      while($_->y1 %2) {
-        $_->{rect}->{y1}--;
-        $_->{rect}->{y2}++;
-      };
-      while($_->y2 %2) {
-        $_->{rect}->{y2}++;
-      };
-    };
     my($png)=png($page);
-    @word = grep { defined and $_->level==5 } @word;
     my($img)=img($png);
+    @word = grep { defined and $_->level==5 } @word;
     for(@word) {
-      $seen{$_->{conf}=int($_->{conf})}++;
-      if($_->{conf}<70) {
+      my($text)=$_->{text};
+      my($conf)=$_->{conf};
+      if($conf<70) {
         if($_->text eq "(continue)") {
-          $_->{conf}=90;
-          $_->{text}="(CONTINUED)";
+          $conf=90;
+          $text="(CONTINUED)";
+        } elsif($conf<20 and $conf>0){
+          if($text =~ m{[0-9]} and $text =~ m{^[0-9\$.,A-]+$}){
+            say STDERR "LC NUM:  ",pp($text);
+            $_->{kept}=1;
+            push(@{$trash{$text}},$_);
+            next;
+          } else {
+            say STDERR "lc text: ",pp($text);
+          };
+        } else {
+          eex("lc: ", $_);
         };
-        say $_->{text};
-        if($trash{$_->{text}}){
-          push(@l,pp( [ $_ ] ));
+        if($trash{$text}){
+          push(@{$trash{$text}},$_);
           $_=undef;
         };
       }    
-      eex($_->text) if defined and $_->{conf} < 20 and $_->{conf}>0;
     };
-    @word = grep { (blessed($_) or eex($_)) and defined and $_->level==5 } @word;
+    @word = grep { blessed($_) and defined and $_->level==5 } @word;
+
     for(@word) {
       $_->{page}=$p;
       $_->{y}=$y;
@@ -119,8 +120,10 @@ sub main
     my(@line);
     if($word[0]->text eq "POLLOCK") {
       local(@_)=shift(@word);
+      push(@_, grep { $_->text eq "Investment" or $_->text eq "Advisors" } @word);
+      eex(@_);
       push(@line,TsvLine->from(@_));
-    };
+    }
     push(@line,TsvLine->from(@word));
     my(@w);
     my($last);
@@ -132,12 +135,15 @@ sub main
         push(@w,$_);
       };
     };
-    say scalar(@w)," ",scalar(@word);
     push(@all,splice(@word));
   };
   tsv_insert(@all);
-  $log->spew(\@l);
   dbh->disconnect;
 };
-
 main;
+END {
+  my($log);
+  $log=path("trash.log");
+  $log->spew(pp(\%trash));
+  eex(\%trash);
+};

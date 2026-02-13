@@ -3,6 +3,7 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
+use lib "lib";
 use common::sense;
 use autodie;
 use Nobody::Util;
@@ -20,12 +21,6 @@ my(%tgt);
 my(@inv,@trn);
 $|++;
 
-sub invest {
-  local(@_)=@_;
-  for(@_) {
-    say $_->text;
-  };
-};
 sub nsort {
   sort { $a <=> $b } @_;
 };
@@ -34,8 +29,8 @@ sub main {
   my($tsv,$png,@img);
   our(%range);
   local(*range)=dbh->selectall_hashref("select * from tsv_range r where level=5 order by rid, tsv",["rid","tsv"]);
-  say scalar(%range);
   my(@tr,@in);
+  my(@line);
   for my $rid(nsort keys %range){
     my($range)=$range{$rid};
     my(@range)=sort { $a <=> $b } keys %$range;
@@ -51,8 +46,96 @@ sub main {
       warn $line[0]->text;
     };
   };
-  transact(@tr);
+#      transact(@tr);
+  invest(@in);
 }
+my(%trig);
+INIT {
+  %trig=(
+    qw(
+    TRANSACTIONS 1
+    INVESTMENTS 1
+    INSURED 1
+    Page 1
+    Program 1
+    )
+  );
+};
+my(%hist);
+sub avg { 
+  return sum(@_)/@_;
+};
+my(%acct);
+sub invest {
+  local(@_)=@_;
+  eex("enter invest");
+  my($acct);
+  for(@_){
+    my($range)=$_;
+    local(*_)=$range;
+    {
+      eex(map { $_->text } @_);
+    };
+    while(@_) {
+      my($rstart)=map { $_->text } shift;
+      while(@_ and $_[0]->text(0) !~ m{^\d+$}){
+        my($skip)=shift;
+        eex({skip=>$skip->text});
+      }
+      while(@_ and !$trig{$_[0]->text(0)}){
+        my($line)=shift;
+        my($text)=$line->text;
+        my($wone)=$line->text(0);
+        if($trig{$wone}) {
+          eex{TRIGGERED=>'true'};
+          eex({text=>$text});
+          next;
+        } elsif ($wone =~ m{^[0-9]+$}) {
+          eex(acct=>$text);
+          $acct{$wone}//=$text;
+          $acct=[$line];
+          next;
+        } elsif($wone eq "Total"){
+          eex(total=>$text);
+          $acct=undef;
+        } elsif(defined($acct)){
+          eex({invest=>$text});
+          push(@$acct,$_);
+        } else {
+          eex( { num=>0+@_, range=>"$range", line=>"$line", test=>"$text", wone=>"$wone" } );
+        };
+      };
+    };
+  };
+  if(defined($acct)){
+    die pp(acct=>$acct);
+  };
+};
+
+    
+#        for(@$_) {
+#          eex(ref($_));
+#          local(*_)=$_->{word};
+#          for(@_){
+#            eex("  ".ref($_));
+#            $_=[ $_->x1, $_->text, $_->y2 ];
+#            eex("    ".pp($_));
+#          };
+#        }
+#        next;
+#        for(my $i=0;$i<$#in;$i++){
+#          local($_)=$in[$i];
+#          local(*_)=$_;
+#          for(@_){
+#            eex("  $_");
+#          };
+#        }
+#      };
+#        my($mark)=shift;
+#        my(@col) = map { [$_] } pick_headers(\@_);
+#        for($_) {
+#          eex($_);
+#        };
 sub transact {
   my(@tr)=@_;
   my(@data);
@@ -69,15 +152,6 @@ sub transact {
     my $rule4=${head}->word(2)->left;
     my $rule5=${head}->word(2)->right-5;
 
-    my(%trig)=(
-      qw(
-      TRANSACTION 1
-      INVESTMENT 1
-      INSURED 1
-      Page 1
-      Program 1
-      )
-    ); 
     my($last);
     for(@_) {
       my(@word)=@{$_->word};
@@ -104,7 +178,6 @@ sub transact {
       };
     };
   };
-  my(%acct);
   my ($sth_a)=dbh->prepare("insert into acct (acct,title) values (?,?) on conflict do nothing;");
   my ($sth_t)=dbh->prepare("insert into xact (acct,date,text,amnt) values (?,?,?,?)");
   for(@data) {

@@ -86,6 +86,9 @@ sub word {
     return $self->{word};
   };
 }
+sub line {
+  return shift->word(0)->line;
+};
 sub text {
   my($self)=$_[0];
   my(@word)=$self->word($_[1]);

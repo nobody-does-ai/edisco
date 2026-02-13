@@ -25,6 +25,15 @@ BEGIN {
     return readlink("/proc/self/cwd");
   };
 };
+sub ref_count {
+  my(%res);
+  for(@_) {
+    my($ref)=defined?ref?ref:"":"undef";
+    $res{$ref}++;
+  };
+  eex(\%res);
+  return \%res;
+};
 sub basename {
   path(shift)->basename(@_);
 };
@@ -128,7 +137,7 @@ sub file_id {
   package Null;
 };
 sub flatten(@);
-sub ref_count(@_){
+sub ref_count{
   my(%ref);
   for(@_) {
     my($ref)=ref($_);
