@@ -72,7 +72,9 @@ ALTER TABLE public.msg OWNER TO nn;
 CREATE TABLE public.tsv (
     tsv bigint,
     level integer,
-    page text,
+    year integer,
+    quarter integer,
+    page integer,
     block integer,
     par integer,
     line integer,
@@ -188,6 +190,8 @@ ALTER TABLE public.tsv_tmp OWNER TO nn;
 CREATE VIEW public.tsv_tmp_v AS
  SELECT rank() OVER (ORDER BY tsv_tmp.y, tsv_tmp.q, tsv_tmp.page, tsv_tmp.y1, tsv_tmp.x1, tsv_tmp.level) AS tsv,
     tsv_tmp.level,
+    tsv_tmp.y AS year,
+    tsv_tmp.q AS quarter,
     (((tsv_tmp.y * 1000) + (tsv_tmp.q * 100)) + tsv_tmp.page) AS page,
     tsv_tmp.block,
     tsv_tmp.par,
