@@ -92,6 +92,75 @@ CREATE TABLE public.tsv (
 ALTER TABLE public.tsv OWNER TO nn;
 
 --
+-- Name: tsv_markers; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_markers AS
+ SELECT tsv.tsv,
+    tsv.level,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.y1,
+    tsv.y2,
+    tsv.x1,
+    tsv.x2,
+    tsv.conf,
+    tsv.text,
+    marker_text.prim
+   FROM public.tsv,
+    public.marker_text
+  WHERE ((tsv.text = marker_text.text) AND (tsv.reject = 0));
+
+
+ALTER TABLE public.tsv_markers OWNER TO nn;
+
+--
+-- Name: tsv_pairs; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_pairs AS
+ SELECT tsv_markers.tsv AS tsv0,
+    tsv_markers.text AS text0,
+    tsv_markers.prim,
+    lead(tsv_markers.tsv) OVER (ORDER BY tsv_markers.page, tsv_markers.y1, tsv_markers.x1, tsv_markers.level) AS tsv1,
+    lead(tsv_markers.text) OVER (ORDER BY tsv_markers.page, tsv_markers.y1, tsv_markers.x1, tsv_markers.level) AS text1
+   FROM public.tsv_markers
+  ORDER BY tsv_markers.page, tsv_markers.y1, tsv_markers.x1, tsv_markers.level;
+
+
+ALTER TABLE public.tsv_pairs OWNER TO nn;
+
+--
+-- Name: tsv_range; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_range AS
+ SELECT tsv_pairs.tsv0 AS rid,
+    tsv.tsv,
+    tsv.level,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.y1,
+    tsv.y2,
+    tsv.x1,
+    tsv.x2,
+    tsv.conf,
+    tsv.text
+   FROM public.tsv,
+    public.tsv_pairs
+  WHERE ((tsv.tsv >= tsv_pairs.tsv0) AND (tsv.tsv <= tsv_pairs.tsv1) AND (tsv_pairs.prim = 1) AND (tsv.reject = 0))
+  ORDER BY tsv.tsv;
+
+
+ALTER TABLE public.tsv_range OWNER TO nn;
+
+--
 -- Name: tsv_tmp; Type: TABLE; Schema: public; Owner: nn
 --
 
@@ -109,7 +178,8 @@ CREATE UNLOGGED TABLE public.tsv_tmp (
     dx integer,
     dy integer,
     conf double precision,
-    text text
+    text text,
+    reject integer
 );
 
 
