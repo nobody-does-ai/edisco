@@ -5,7 +5,6 @@ use Nobody::Util;
 use common::sense;
 use Time::HiRes qw(time);
 use Tsv;
-use TsvWord;
 our(@EXPORT);
 BEGIN {
   push(@EXPORT,
@@ -104,7 +103,7 @@ sub dbh {
       my $file=path("tsv")->child('202?-Q?-???.tsv');
       ($file)=glob("$file");
       (@fs_head)=map { split } qx(head -n 1 $file);
-      (@db_head);
+      push(@db_head,"reject");
       for(map { "$_" } @fs_head) {
         s{_num}{};
         if(m{left|top|width|height}){

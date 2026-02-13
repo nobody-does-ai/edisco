@@ -91,20 +91,23 @@ sub main
         if($_->text eq "(continue)") {
           $conf=90;
           $text="(CONTINUED)";
+          $_->{reject}=0;
         } elsif($conf<20 and $conf>0){
           if($text =~ m{[0-9]} and $text =~ m{^[0-9\$.,A-]+$}){
             say STDERR "LC NUM:  ",pp($text);
-            $_->{kept}=1;
             push(@{$trash{$text}},$_);
+            $_->{reject}=0;
             next;
           } else {
             say STDERR "lc text: ",pp($text);
+            $_->{reject}=1;
           };
         } else {
-          eex("lc: ", $_);
+          eex("lc: ", $conf, $text);
         };
         if($trash{$text}){
           push(@{$trash{$text}},$_);
+          $_->{reject}=1;
           $_=undef;
         };
       }    
@@ -115,6 +118,7 @@ sub main
       $_->{page}=$p;
       $_->{y}=$y;
       $_->{q}=$q;
+      $_->{reject}//=0;
     };
     my($width)=$word[0]->width;
     my(@line);
@@ -145,5 +149,4 @@ END {
   my($log);
   $log=path("trash.log");
   $log->spew(pp(\%trash));
-  eex(\%trash);
 };

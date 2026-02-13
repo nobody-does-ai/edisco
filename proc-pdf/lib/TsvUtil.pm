@@ -2,10 +2,9 @@ package TsvUtil;
 use common::sense;
 use Nobody::Util;
 use List::Util;
-use TsvWord;
+use Tsv;
 use Carp qw(croak confess cluck carp);
 use File::stat qw(:FIELDS);
-use TsvRect;
 use Nobody::PP;
 use autodie;
 our(@EXPORT,@EXPORT_OK);
@@ -25,6 +24,7 @@ older
 };
 my(%verbose);
 BEGIN {
+  $verbose{skips}=1;
 };
 sub group_text {
   return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
@@ -143,11 +143,13 @@ sub pdf_to_png {
   return $of;
 };
 sub png_to_tsv {
+  err("png_to_tsv(@_)\n");
   die "usage: png_to_tsv(\$png)" unless @_;
   return map { png_to_tsv($_) } @_ unless @_==1;
   my($fmt)="tsv/%s.tsv";
   my($base,$dir);
   my $if=shift;
+  die "$if not defined" unless defined $if;
   die "$if does not exsit" unless $if->exists;
   my ($of)=path(sprintf($fmt,$if->basename(".png")));
   $of->parent->mkdir;
@@ -168,6 +170,7 @@ sub png_to_tsv {
   return $of;
 };
 sub pdf_to_pgs {
+  die "usage: pdf_to_pgs(\$pdf)" unless @_;
   return map { pdf_to_pgs($_) } @_ unless 1==@_;
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
@@ -234,6 +237,7 @@ sub group_find {
   local(@_)=@_;
   local(*_)=shift;
   return unless @_;
+  @_ = sort { $a->y1 <=> $b->y2 } @_;
   my($i)=0;
   my(@word)=shift;
   my($bot)=$word[0]->y2;
@@ -244,7 +248,15 @@ sub group_find {
   }
   my($max_y1)=max(map { $_->y1 } @word);
   my($min_y2)=min(map { $_->y2 } @word);
-  eex( $max_y1, $min_y2, join(" ", map { $_->text } @word) ) if $max_y1>$min_y2;  
+  my($max_dy)=max(map { $_->dy } @word);
+  if($max_y1 > $min_y2) {
+    eex(max_y1=>$max_y1, min_y2=>$min_y2, max_dy=>$max_dy);
+    for(sort {$b->dy <=> $a->dy} @word) {
+#          if($_->y1>$min_y2 or $_->y2 <$max_y1) {
+        eex( $_->y1, $_->y2, $_->dy, $_->text );
+#          };
+    };
+  };
 #      {
 #        my @tmp = sort { $b->dy <=> $a->dy } @word;
 #        for(@tmp) {

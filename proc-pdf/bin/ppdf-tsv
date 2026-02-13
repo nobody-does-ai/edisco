@@ -3,7 +3,6 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
-use lib "lib";
 use Nobody::Util;
 use Carp::Always;
 use vars (@var);
@@ -38,17 +37,24 @@ sub main {
   local(@_)=@_;
   my(@tsv);
   system("rm -fr pdf tsv png");
-  my($pid)=1;
-  my(@prod,%res);
+  my(@pid,@log);
   for my $pdf(@_) {
     my($tsv)=path(grep { s{(pdf|src)}{tsv}g } $pdf->stringify);
+    my($log)=path(grep { s{(pdf|src)}{log}g } $pdf->stringify);
+    push(@log,$log);
+    if(my $pid=fork) {
+      push(@pid,$pid);
+      next;
+    };
+    path("log")->mkdir;
+    open(STDOUT,">$log");
+    open(STDERR,">&STDOUT");
     local(@_);
-    push(@prod,%res=map { %$_ } pdf_to_pgs($pdf));
-    eex(\%res);
-    push(@prod,%res=map { %$_ } pdf_to_png(map { ref($_)eq'ARRAY'?@$_:$_ } values %res));
-    eex(\%res);
-    push(@prod,%res=map { %$_ } png_to_tsv(map { ref($_)eq'ARRAY'?@$_:$_ } values %res));
-    eex(\%res);
+    @_=pdf_to_pgs($pdf);
+    @_=pdf_to_png(@_);
+    @_=png_to_tsv(@_);
+    exit(0);
   };
-  exit(0);
-};
+  system("tail -f @log&");
+  child_wait;
+} 
