@@ -2,10 +2,10 @@
 
 regen-db ()
 {
+  test -z "$1" || export PGDATABASE="$1"
   set -euo pipefail
   set -x
 
-  test -z "$1" || export PGDATABASE="$1"
   if test -z "$PGDATABASE" ; then
     echo "no database set" 
     return 1
