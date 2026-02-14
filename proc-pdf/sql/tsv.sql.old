@@ -37,25 +37,11 @@ CREATE TABLE public.doc (
 ALTER TABLE public.doc OWNER TO nn;
 
 --
--- Name: doc_doc_seq; Type: SEQUENCE; Schema: public; Owner: nn
---
-
-ALTER TABLE public.doc ALTER COLUMN doc ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.doc_doc_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
 -- Name: tsv; Type: TABLE; Schema: public; Owner: nn
 --
 
 CREATE TABLE public.tsv (
-    tsv bigint,
+    tsv integer,
     doc integer,
     level integer,
     page_num integer,
@@ -116,6 +102,8 @@ ALTER TABLE ONLY public.doc
 ALTER TABLE ONLY public.doc
     ADD CONSTRAINT doc_pkey PRIMARY KEY (doc);
 
+ALTER TABLE ONLY tsv
+  ADD CONSTRAINT tsv_pkey key(tsv);
 
 --
 -- Name: tsv_x_range_gist; Type: INDEX; Schema: public; Owner: nn
@@ -142,4 +130,5 @@ ALTER TABLE ONLY public.tsv
 --
 -- PostgreSQL database dump complete
 --
+
 

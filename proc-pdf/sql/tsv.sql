@@ -28,8 +28,6 @@ SET default_table_access_method = heap;
 CREATE TABLE public.doc (
     doc integer NOT NULL,
     file text NOT NULL,
-    year integer,
-    quarter integer,
     page int4multirange DEFAULT '{}'::int4multirange NOT NULL
 );
 
@@ -102,8 +100,6 @@ ALTER TABLE ONLY public.doc
 ALTER TABLE ONLY public.doc
     ADD CONSTRAINT doc_pkey PRIMARY KEY (doc);
 
-ALTER TABLE ONLY tsv
-  ADD CONSTRAINT tsv_pkey key(tsv);
 
 --
 -- Name: tsv_x_range_gist; Type: INDEX; Schema: public; Owner: nn
