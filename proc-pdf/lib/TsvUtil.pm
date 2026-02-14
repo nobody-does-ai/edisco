@@ -9,7 +9,7 @@ use Nobody::PP;
 use autodie;
 our(@EXPORT,@EXPORT_OK);
 BEGIN {
-  @EXPORT=qw( vsort vcmp );
+  @EXPORT=qw( vert_sort vert_hash_cmp );
   @EXPORT_OK= qw(
 fname_parse
 group_find
@@ -206,7 +206,7 @@ sub tsv_combine {
   %off=%max;
   \%off;
 };
-sub vhcmp {
+sub vert_hash_cmp {
   return (
     $a->{page} <=> $b->{page}
       or
@@ -215,7 +215,7 @@ sub vhcmp {
     $a->{left} <=> $b->{left}
   );
 };
-sub vcmp {
+sub vert_cmp {
   return (
     $a->page <=> $b->page
       or
@@ -224,11 +224,11 @@ sub vcmp {
     $a->left <=> $b->left
   );
 };
-sub vsort {
+sub vert_sort {
   if(@_ == grep { U::blessed($_) } @_) {
-    return sort { vcmp } @_;
+    return sort { vert_cmp } @_;
   } elsif (@_==grep { !U::blessed($_) } @_) {
-    return sort { vhcmp } @_;
+    return sort { vert_hash_cmp } @_;
   } else {
     die "mixed blessed and unblessed";
   };
@@ -237,7 +237,7 @@ sub group_find {
   local(@_)=@_;
   local(*_)=shift;
   return unless @_;
-  @_ = sort { $a->y1 <=> $b->y2 } @_;
+  @_ = vert_sort @_;
   my($i)=0;
   my(@word)=shift;
   my($bot)=$word[0]->y2;
@@ -246,24 +246,6 @@ sub group_find {
     push(@word,$word);
     $bot=$word->y2 if $bot<$word->y2;
   }
-  my($max_y1)=max(map { $_->y1 } @word);
-  my($min_y2)=min(map { $_->y2 } @word);
-  my($max_dy)=max(map { $_->dy } @word);
-  if($max_y1 > $min_y2) {
-    eex(max_y1=>$max_y1, min_y2=>$min_y2, max_dy=>$max_dy);
-    for(sort {$b->dy <=> $a->dy} @word) {
-#          if($_->y1>$min_y2 or $_->y2 <$max_y1) {
-        eex( $_->y1, $_->y2, $_->dy, $_->text );
-#          };
-    };
-  };
-#      {
-#        my @tmp = sort { $b->dy <=> $a->dy } @word;
-#        for(@tmp) {
-#          say STDERR $_->dy, " ", $_->text;
-#        };
-#        say STDERR;
-#      };
   sort { $a->x1 <=> $b->x1 } @word;
 };
 my(%pid);

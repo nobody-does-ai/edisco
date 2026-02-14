@@ -4,6 +4,7 @@ use DBI;
 use Nobody::Util;
 use common::sense;
 use Time::HiRes qw(time);
+use lib "lib";
 use Tsv;
 our(@EXPORT);
 BEGIN {
@@ -23,6 +24,9 @@ BEGIN {
     local(@_)=@_;
     state(@head);
     @head=head('db') unless @head;
+#        eex(@head);
+    shift(@head) if $head[0]eq'tsv';
+#        eex(@head);
     state($head);
     $head//=join(", ",@head);
     state($body);
@@ -36,6 +40,7 @@ BEGIN {
       my($word)=$_;
       my($rect)=$word->{rect};
       my(@data);
+
       for(@head){
         if($rect->can($_)){
           push(@data,$rect->$_());
@@ -45,18 +50,26 @@ BEGIN {
           push(@data,$word->{$_});
         };
       };
+      {
+        local(@_);
+        for(0 .. -1+max(scalar(@data),scalar(@head))){
+          push(@_,$head[$_],$data[$_]);
+        };
+#            eex(\@_);
+      }
       $data[$#data]=~s{\\}{\\\\}g;
       $_=join("\t",@data);
+#          eex($_);
     };
     $sth->execute();
     dbh->pg_putcopydata(join("\n",@_,""));
     dbh->pg_endcopy();
     dbh->do( "delete from tsv; insert into tsv (select * from tsv_tmp_v order by tsv );");
   };
-  sub tsv_fetch {
+  sub tsv_select {
     local(@_)=@_;
     my($where)=@_?join("",@_):"null is null";
-    my(@tsv)=hash_fetch("select * from tsv_order where $where");
+    my(@tsv)=hash_fetch("select * from tsv where $where order by page, line, x1");
     @tsv;
   }
   sub tsv_fetch_range {
@@ -103,7 +116,6 @@ sub dbh {
       my $file=path("tsv")->child('202?-Q?-???.tsv');
       ($file)=glob("$file");
       (@fs_head)=map { split } qx(head -n 1 $file);
-      push(@db_head,"reject");
       for(map { "$_" } @fs_head) {
         s{_num}{};
         if(m{left|top|width|height}){
@@ -111,7 +123,8 @@ sub dbh {
         };
         push(@db_head, $_);
       };
-      unshift(@db_head,"y","q");
+      push(@db_head,"reject",pop(@db_head));
+      unshift(@db_head,"tsv","y","q");
     };
     if($_[0] eq 'db') {
       return @db_head;
@@ -133,8 +146,12 @@ sub hash_fetch {
   };
   $sth->execute;
   my($stime)=time;
-  my(@res)=$sth->fetchall_array;;
-  return @res;
+  our($set,$row,$col)=[];
+  local($col)=$sth->{NAME};
+  for $row(@{$sth->fetchall_arrayref}){
+    push(@{$set},{mesh($col,$row)});
+  };
+  return $set;
 };
 sub word_fetch {
   my(@tsv)=tsv_fetch(@_);

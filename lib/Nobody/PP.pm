@@ -56,6 +56,7 @@ use vars qw(%seen %refcnt @dump @fixup %require $TRY_BASE64  $INDENT $LINEWIDTH)
 
 $TRY_BASE64 = 50 unless defined $TRY_BASE64;
 $INDENT = "  " unless defined $INDENT;
+$LINEWIDTH=$ENV{COLUMNS}-2;
 $LINEWIDTH = 60 unless defined $LINEWIDTH;
 
 sub pp

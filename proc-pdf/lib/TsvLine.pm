@@ -8,14 +8,13 @@ use common::sense;
   use Carp::Always;
   use Carp qw( croak cluck carp confess );
   use Tsv;
+  use TsvUtil;
   use autodie;
   use Nobody::PP;
   our(@VERSION) = qw( 0 1 0 );
   our($DEBUG);
 };
-sub vsort;
-*eex=\&U::eex;
-*vsort=\&U::vsort;
+use TsvUtil;
 sub new {
   local(@_)=@_;
   my($class)=shift;
@@ -26,6 +25,9 @@ sub new {
 #      $_->{rect}->{y1}=$y1 for @word;
 #      $_->{rect}->{y2}=$y2 for @word;
   $self;
+};
+sub line {
+  shift->word(0)->line;
 };
 sub refCount {
   my(%cnt);
@@ -42,7 +44,7 @@ sub from {
   if(grep { ref($_) eq 'HASH' } @_){
     @_=TsvWord->from(@_);
   };
-  @_=vsort @_;
+  @_=TsvUtil::vert_sort(@_);
   my(@line);
   while(@_){
     my(@tmp)=TsvUtil::group_find(\@_);

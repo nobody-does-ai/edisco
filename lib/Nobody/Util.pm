@@ -197,27 +197,27 @@ sub maybeRef($) {
   carp "use class, not maybeRef";
   goto \&class;
 };
-sub vcmp {
-  my ($a,$b) = (
-    @_ == 2 ? (shift,shift) :
-    @_ ? (undef, undef, warn "Warning:  vcmp wants 2 args or none") :
-    ($a,$b)
-  );
-
-  my (@a)=split m{(\D+)}, $a;
-  my (@b)=split m{(\D+)}, $b;
-  no warnings;
-  while( @a and @b and $a[0] eq $b[0] ) {
-    shift @a;
-    shift @b;
-  };
-  return 0 unless @a or @b;
-  return @a <=> @b unless @a and @b;
-  return $a[0] <=> $b[0] || $a[0] cmp $b[0];  
-};
-sub vsort {
-  return sort { vcmp } @_;
-};
+#    sub vcmp {
+#      my ($a,$b) = (
+#        @_ == 2 ? (shift,shift) :
+#        @_ ? (undef, undef, warn "Warning:  vcmp wants 2 args or none") :
+#        ($a,$b)
+#      );
+#    
+#      my (@a)=split m{(\D+)}, $a;
+#      my (@b)=split m{(\D+)}, $b;
+#      no warnings;
+#      while( @a and @b and $a[0] eq $b[0] ) {
+#        shift @a;
+#        shift @b;
+#      };
+#      return 0 unless @a or @b;
+#      return @a <=> @b unless @a and @b;
+#      return $a[0] <=> $b[0] || $a[0] cmp $b[0];  
+#    };
+#    sub vsort {
+#      return sort { vcmp } @_;
+#    };
 sub lsort {
   my (@s,@l) = splice(@_);
   for(0 .. -1+@s) {

@@ -11,18 +11,51 @@ use GD::Image;
 use Carp qw( croak confess carp cluck );
 use Carp::Always;
 use Tsv;
-use TsvWord;
-use TsvLine;
+use TsvDB;
 use vars qw($coder);
 *coder=\$Tsv::coder;
 use feature qw(signatures);
+use Term::Table;
 our(@VERSION) = qw( 0 1 0 );
 sub main {
   my($txt)=chr(0xc2).chr(0xa2);
   my($tgt)=qr{$txt};
-  my(@tsv)=glob("tsv/*.tsv");
   my(%tgt);
-  for my $tsv(map { path($_) } @tsv) {
+  our(%word);
+  *word=dbh->selectall_hashref("select * from tsv order by tsv","tsv");
+  our(@word);
+  @word = map { $word{$_} } sort { $a<=>$b } keys %word;
+  my @th=qw( tsv line y1 y2 x1 x2 text );
+  my @tr;
+  for my $word(@word) {
+    push(@tr, [ map { $word->{$_} } @th ]);
+  };
+  my($t)=Term::Table->new(
+    header=>\@th,
+    rows=>\@tr,
+  ); 
+  say $_ for $t->render;
+  exit(0);
+  for(@word) {
+    eex($_->{tsv}, $_->{line});
+  };
+
+};
+main
+__DATA__
+  exit(0);
+#        my(@word)=TsvWord->load_file($tsv);
+#        @word=grep { $_->level == 5 } @word;
+#        @word = sort {
+#          $a->top <=> $b->top
+#            or
+#          $a->left <=> $b->left
+#        } @word;
+#        @word=TsvLine->from(@word);
+#        @word=grep { defined } @word;
+#        @word=grep { $_->text =~ m{$tgt} } @word;
+  
+  for my $r(%range) {
     my($png)=path(sprintf("png/%s.png",$tsv->basename(".tsv")));
     next unless $png->exists;
     my(@word)=TsvWord->load_file($tsv);

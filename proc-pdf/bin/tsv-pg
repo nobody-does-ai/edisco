@@ -55,6 +55,101 @@ sub img {
   return undef;# GD::Image->newFromPng("$_[0]");
 };
 my(%trash);
+my(%trig);
+INIT {
+  %trig=(
+    qw(
+    TRANSACTIONS 2
+    INVESTMENTS 2
+    KEY 1
+    INSURED 1
+    Page 1
+    Program 1
+    )
+  );
+  my($txt)=chr(0xc2).chr(0xa2);
+  for(qw( SY . I IB [| Il ll Re I lo] e eo ] [ ifaveclized - ), $txt) {
+    $trash{$_}=1;
+  };
+  for(    qw{ Investment Domestic Cash of SEI }  ) {
+    $trash{$_}=0;
+  };
+  $trash{Yotal}=\"Total";
+  $trash{"(continue)"}=\"[CONTINUE]";
+  $trash{"(continuep)"}=\"[CONTINUE]";
+  $trash{"(conTinuep)"}=\"[CONTINUE]";
+  $trash{"(conTinue)"}=\"[CONTINUE]";
+  $trash{"account:"}=\"account:";
+  $trash{"Numberios"}=\"Numbers";
+  $trash{"Accounts\xE2\x80\x99"}=\"Accounts";
+  $trash{"Rem"}=1;
+  $trash{"sanuary"}=\"January";
+  $trash{ACCT}=\"ACCT";
+};
+sub no_trash {
+  my(@word)=grep { $_->{level} == 5 } @_;
+  for(@word) {
+    our($text,$conf);
+    local(*text)=\$_->{text};
+    local(*conf)=\$_->{conf};
+    if($conf<70) {
+      my($trash)=$trash{$text};
+      if(defined($trash)) {
+        if($trash==0){ 
+          $conf=90;
+          $text=$conf=$_=undef;
+        } elsif ( ref($trash) eq "SCALAR" ) {
+          $text=${$trash};
+          $conf=90;
+        } else {
+          $text=$conf=$_=undef;
+        };
+      } elsif($text =~ m{^account.s}){
+        $text="account(s)";
+        $conf=90;
+      } elsif($text eq "&") {
+        $text="and";
+        $conf=90;
+        $conf=90;
+      } elsif($text =~ m{[0-9]} and $text =~ m{^[0-9\$.,A-]+$}) {
+        $conf=90;
+        $text =~ s{A}{4}g;
+      }
+      next if($conf>70);
+      next unless defined and defined $text;
+#          eex($conf, $text, $trash{$text});
+      if($conf<20 and $conf>0){
+#            eex( { text=>$text, conf=>$conf } );
+        $_=undef;
+      };
+      if($trash{$text}){
+        push(@{$trash{$text}},$_);
+        $_->{reject}=1;
+        $_=undef;
+      };
+    }    
+  };
+  grep { !$_->{reject} } grep { defined } @word;
+}
+sub filter {
+  my(@word)=splice(@_);
+  my($page);
+  @word = sort { $a->page <=> $b->page or $a->y1 <=> $b->y1 or $a->x1 <=> $b->x2 } @word;
+  return @word unless @word;
+  while(@word) {
+    my($group)=[shift @word];
+    push(@_,$group);
+    while(@word and !$trig{$word[0]->text}){
+      push(@$group,shift(@word));
+    }
+    if(@word and $trig{$word[0]->text}==2){
+      push(@_,$group=[]);      
+    } else {
+      splice(@word);
+    };
+  };
+  return @_;
+};
 sub main
 {
   my(@l);
@@ -69,77 +164,49 @@ sub main
   }
   my(@all);
   my($l)=0;
-  for(qw( ll I lo] e eo ] [ ifaveclized )) {
-    $trash{$_}=[];
-  };
-  {
-    my($txt)=chr(0xc2).chr(0xa2);
-    $trash{$txt}=[];
-  };
   for my $pg(sort keys %page) {
     my($prec)=$page{$pg};
     my($y,$q,$p,$page)=@{$prec};
-    eex($page);
     my(@word)=TsvWord->load_file($page);
-    my($png)=png($page);
-    my($img)=img($png);
-    @word = grep { defined and $_->level==5 } @word;
-    for(@word) {
-      my($text)=$_->{text};
-      my($conf)=$_->{conf};
-      if($conf<70) {
-        if($_->text eq "(continue)") {
-          $conf=90;
-          $text="(CONTINUED)";
-          $_->{reject}=0;
-        } elsif($conf<20 and $conf>0){
-          if($text =~ m{[0-9]} and $text =~ m{^[0-9\$.,A-]+$}){
-            say STDERR "LC NUM:  ",pp($text);
-            push(@{$trash{$text}},$_);
-            $_->{reject}=0;
-            next;
-          } else {
-            say STDERR "lc text: ",pp($text);
-            $_->{reject}=1;
-          };
-        } else {
-          eex("lc: ", $conf, $text);
-        };
-        if($trash{$text}){
-          push(@{$trash{$text}},$_);
-          $_->{reject}=1;
-          $_=undef;
-        };
-      }    
+    @word = grep { $_->level == 5 } @word;
+    @word=no_trash(@word);
+    while(@word and $trig{$word[0]->text}!=2){
+      shift(@word);
     };
-    @word = grep { blessed($_) and defined and $_->level==5 } @word;
-
+    next unless @word;
     for(@word) {
-      $_->{page}=$p;
-      $_->{y}=$y;
-      $_->{q}=$q;
-      $_->{reject}//=0;
+#          for(@$_) {
+        my($rect)=$_->{rect};
+        if($rect->{y1}%2){ $rect->{y1}--; $rect->{y2}++; };
+        if($rect->{x1}%2){ $rect->{x1}--; $rect->{x2}++; };
+        $rect->{y2}=$rect->{y1}+13;
+        $_->{page}=$p;
+        $_->{y}=$y;
+        $_->{q}=$q;
+        $_->{reject}//=0;
+#          };
     };
-    my($width)=$word[0]->width;
     my(@line);
-    if($word[0]->text eq "POLLOCK") {
-      local(@_)=shift(@word);
-      push(@_, grep { $_->text eq "Investment" or $_->text eq "Advisors" } @word);
-      eex(@_);
-      push(@line,TsvLine->from(@_));
-    }
-    push(@line,TsvLine->from(@word));
+#        push(@line,map { [ TsvLine->from(@$_) ] } @word);
+#        @line=filter(@line);
+    @line=TsvLine->from(@word);
     my(@w);
     my($last);
     for my $line(@line)
     {
-      $line->{line}=++$l;
-      for(@{$line->word}){
-        $_->{line}=$l;
-        push(@w,$_);
-      };
+      my($y1,$y2,$m1);
+#          for my $line(@$arr) {
+        $y1=$line->y1;
+        $y2=$line->y2;
+        $m1=max(map { $_->y1 } @{$line->word})-$y1;
+        $line->{line}=++$l;
+        for(@{$line->word}){
+          $_->{line}=$l;
+          push(@w,$_);
+        };
+#          };
     };
-    push(@all,splice(@word));
+    push(@all,splice(@w));
   };
   tsv_insert(@all);
   dbh->disconnect;

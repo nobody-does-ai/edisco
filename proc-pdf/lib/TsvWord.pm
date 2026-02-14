@@ -51,6 +51,9 @@ sub rect {
 sub left {
   shift->rect->left(@_);
 }
+sub line {
+  shift->{line};
+};
 sub right {
   shift->rect->right(@_);
 }
