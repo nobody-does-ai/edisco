@@ -11,6 +11,7 @@ use TsvDB;
 use GD::Image;
 use GD;
 use GDUtil;
+use TsvLine;
 use TsvUtil qw(group_find);
 
 $|++;
@@ -163,10 +164,9 @@ sub main
     $_=[map { 0+$_ || $_ } split(m{[/.-]Q?}, path($_->{path})->basename(".tsv")),$_->{path}];
   }
   my(@all);
-  my($l)=0;
   for my $pg(sort keys %page) {
     my($prec)=$page{$pg};
-    my($y,$q,$p,$page)=@{$prec};
+    my($y,$q,undef,$page)=@{$prec};
     my(@word)=TsvWord->load_file($page);
     @word = grep { $_->level == 5 } @word;
     @word=no_trash(@word);
@@ -180,33 +180,12 @@ sub main
         if($rect->{y1}%2){ $rect->{y1}--; $rect->{y2}++; };
         if($rect->{x1}%2){ $rect->{x1}--; $rect->{x2}++; };
         $rect->{y2}=$rect->{y1}+13;
-        $_->{page}=$p;
         $_->{y}=$y;
         $_->{q}=$q;
         $_->{reject}//=0;
 #          };
     };
-    my(@line);
-#        push(@line,map { [ TsvLine->from(@$_) ] } @word);
-#        @line=filter(@line);
-    @line=TsvLine->from(@word);
-    my(@w);
-    my($last);
-    for my $line(@line)
-    {
-      my($y1,$y2,$m1);
-#          for my $line(@$arr) {
-        $y1=$line->y1;
-        $y2=$line->y2;
-        $m1=max(map { $_->y1 } @{$line->word})-$y1;
-        $line->{line}=++$l;
-        for(@{$line->word}){
-          $_->{line}=$l;
-          push(@w,$_);
-        };
-#          };
-    };
-    push(@all,splice(@w));
+    push(@all,@word);
   };
   tsv_insert(@all);
   dbh->disconnect;

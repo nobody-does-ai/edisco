@@ -117,14 +117,13 @@ sub dbh {
       ($file)=glob("$file");
       (@fs_head)=map { split } qx(head -n 1 $file);
       for(map { "$_" } @fs_head) {
-        s{_num}{};
         if(m{left|top|width|height}){
           $_=$TsvRect::key{$_};
         };
         push(@db_head, $_);
       };
       push(@db_head,"reject",pop(@db_head));
-      unshift(@db_head,"tsv","y","q");
+      unshift(@db_head,"tsv","doc");
     };
     if($_[0] eq 'db') {
       return @db_head;

@@ -7,6 +7,7 @@ BEGIN {
   use TsvWord;
   use TsvLine;
   use TsvUtil;
+  use TsvCol;
 };
 our($DEBUG)=0;
 {
