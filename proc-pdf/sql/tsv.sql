@@ -26,15 +26,29 @@ SET default_table_access_method = heap;
 --
 
 CREATE TABLE public.doc (
-    doc integer GENERATED ALWAYS AS IDENTITY,
+    doc integer NOT NULL,
     file text NOT NULL,
     year integer,
     quarter integer,
-    page integer NOT NULL
+    page int4multirange DEFAULT '{}'::int4multirange NOT NULL
 );
 
 
 ALTER TABLE public.doc OWNER TO nn;
+
+--
+-- Name: doc_doc_seq; Type: SEQUENCE; Schema: public; Owner: nn
+--
+
+ALTER TABLE public.doc ALTER COLUMN doc ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.doc_doc_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 --
 -- Name: tsv; Type: TABLE; Schema: public; Owner: nn
@@ -53,8 +67,8 @@ CREATE TABLE public.tsv (
     top_px integer,
     width_px integer,
     height_px integer,
-    x_range int4range GENERATED ALWAYS AS (int4range(least(left_px, (left_px + width_px)), greatest(left_px, (left_px + width_px)), '[)'::text)) STORED,
-    y_range int4range GENERATED ALWAYS AS (int4range(least(top_px, (top_px + height_px)), greatest(top_px, (top_px + height_px)), '[)'::text)) STORED,
+    x_range int4range GENERATED ALWAYS AS (int4range(LEAST(left_px, (left_px + width_px)), GREATEST(left_px, (left_px + width_px)), '[)'::text)) STORED,
+    y_range int4range GENERATED ALWAYS AS (int4range(LEAST(top_px, (top_px + height_px)), GREATEST(top_px, (top_px + height_px)), '[)'::text)) STORED,
     conf double precision,
     text text,
     reject integer
@@ -88,11 +102,12 @@ CREATE UNLOGGED TABLE public.tsv_tmp (
 ALTER TABLE public.tsv_tmp OWNER TO nn;
 
 --
--- Name: doc doc_file_page_key; Type: CONSTRAINT; Schema: public; Owner: nn
+-- Name: doc doc_file_key; Type: CONSTRAINT; Schema: public; Owner: nn
 --
 
 ALTER TABLE ONLY public.doc
-    ADD CONSTRAINT doc_file_page_key UNIQUE (file, page);
+    ADD CONSTRAINT doc_file_key UNIQUE (file);
+
 
 --
 -- Name: doc doc_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
@@ -103,17 +118,11 @@ ALTER TABLE ONLY public.doc
 
 
 --
--- Name: tsv tsv_doc_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nn
---
-
-ALTER TABLE ONLY public.tsv
-    ADD CONSTRAINT tsv_doc_fkey FOREIGN KEY (doc) REFERENCES public.doc(doc);
-
---
 -- Name: tsv_x_range_gist; Type: INDEX; Schema: public; Owner: nn
 --
 
 CREATE INDEX tsv_x_range_gist ON public.tsv USING gist (x_range);
+
 
 --
 -- Name: tsv_y_range_gist; Type: INDEX; Schema: public; Owner: nn
@@ -123,5 +132,14 @@ CREATE INDEX tsv_y_range_gist ON public.tsv USING gist (y_range);
 
 
 --
+-- Name: tsv tsv_doc_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nn
+--
+
+ALTER TABLE ONLY public.tsv
+    ADD CONSTRAINT tsv_doc_fkey FOREIGN KEY (doc) REFERENCES public.doc(doc);
+
+
+--
 -- PostgreSQL database dump complete
 --
+

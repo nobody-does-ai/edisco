@@ -1,15 +1,25 @@
 #!/bin/bash
 
-regen-db () 
-{ 
+regen-db ()
+{
+  set -euo pipefail
   set -x
-    git commit -m pre-regen sql
-    dropdb nn;
-    createdb nn;
-    psql < tsv.sql || return 1;
-    mv sql/tsv.sql sql/tsv.sql.old
-    pg_dump -s nn | egrep -v '^\\(un|)restrict' > sql/tsv.sql;
-    bin/tsv-pg;
+
+  test -z "$1" || export PGDATABASE="$1"
+  if test -z "$PGDATABASE" ; then
+    echo "no database set" 
+    return 1
+  fi
+  db="$PGDATABASE"
+
+  git commit -m pre-regen sql || true
+  dropdb --if-exists "$db"
+  createdb "$db"
+  psql -d "$db" -f sql/tsv.sql
+  mv -f sql/tsv.sql sql/tsv.sql.old
+  pg_dump -s -d "$db" | egrep -v '^\\(un|)restrict' > sql/tsv.sql
+  bin/tsv-pg
 }
+
 return 2>/dev/null
 regen-db "$@"

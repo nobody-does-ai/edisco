@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 use lib "lib";
 use common::sense;
+use Carp::Always;
 use autodie;
 use DBI;
 use Time::HiRes qw(sleep );
@@ -11,7 +12,6 @@ use TsvDB;
 use GD::Image;
 use GD;
 use GDUtil;
-use TsvLine;
 use TsvUtil qw(group_find);
 
 $|++;
@@ -49,6 +49,26 @@ sub hgroup_find {
   }
   sort { $a->x1 <=> $b->x1 } @word;
 };
+sub doc_upsert {
+  my($file,$year,$quarter,$page)=@_;
+  state($sth);
+  $sth//=dbh->prepare(
+    "insert into doc(file,year,quarter,page) values (?,?,?,int4multirange(int4range(?, ?, '[)'))) ".
+    "on conflict (file) do update set ".
+    "year=excluded.year, quarter=excluded.quarter, page=doc.page + excluded.page ".
+    "returning doc"
+  );
+  $sth->execute($file,$year,$quarter,$page,$page+1);
+  my($doc)=$sth->fetchrow_array;
+  return $doc;
+}
+sub tsv_fname_parts {
+  my($base)=@_;
+  my($file,$page) = $base =~ m{^(.+)-([0-9]+)$};
+  die "bad tsv filename '$base' (expected <doc>-<page>.tsv)" unless defined $file;
+  my($year,$quarter) = $file =~ m{^([0-9]{4})-Q([1-4])(?:\b|-) };
+  return ($file,$year,$quarter,0+$page);
+}
 sub png {
   return path("png")->child($_[0]->basename(".tsv").".png");
 };
@@ -159,36 +179,33 @@ sub main
   eval {
     dbh->do("delete from tsv");
   };
-  my(%page)=map{$_,{path=>path($_)}}sort glob("tsv/202?-Q?-???.tsv");
-  for( values %page ) {
-    $_=[map { 0+$_ || $_ } split(m{[/.-]Q?}, path($_->{path})->basename(".tsv")),$_->{path}];
+  my(%page);
+  for my $file(sort glob("tsv/202?-Q?-???.tsv")) {
+    my($path)=path($file);
+    my($base)=$path->basename(".tsv");
+    my($doc_file,$y,$q,$page)=tsv_fname_parts($base);
+    my($doc)=doc_upsert($doc_file, $y, $q, $page);
+    $page{$file}={ path=>$path, doc=>$doc, page=>$page, file=>$doc_file };
   }
   my(@all);
+  my($y,$q)=(0,0);
   for my $pg(sort keys %page) {
     my($prec)=$page{$pg};
-    my($y,$q,undef,$page)=@{$prec};
-    my(@word)=TsvWord->load_file($page);
-    @word = grep { $_->level == 5 } @word;
+    my($doc,$path,$page)=@{$prec}{qw(doc path page)};
+    eex($prec);
+    my(@word)=TsvWord->parse_file($path);
+    my(@head)=TsvDB::head('fs');
     @word=no_trash(@word);
-    while(@word and $trig{$word[0]->text}!=2){
-      shift(@word);
-    };
-    next unless @word;
     for(@word) {
-#          for(@$_) {
-        my($rect)=$_->{rect};
-        if($rect->{y1}%2){ $rect->{y1}--; $rect->{y2}++; };
-        if($rect->{x1}%2){ $rect->{x1}--; $rect->{x2}++; };
-        $rect->{y2}=$rect->{y1}+13;
-        $_->{y}=$y;
-        $_->{q}=$q;
-        $_->{reject}//=0;
-#          };
+      $_->{doc}=$doc;
+      $_->{reject}//=0;
+      $_->{page_num}=0+$page;
     };
     push(@all,@word);
   };
+  eex(scalar(@all));
   tsv_insert(@all);
-  dbh->disconnect;
+#      dbh->disconnect;
 };
 main;
 END {
