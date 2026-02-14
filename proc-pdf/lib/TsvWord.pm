@@ -16,14 +16,7 @@ use TsvText;
 our(@ISA)=qw(TsvText);
 our(@cols,%key);
 BEGIN {
-  for(qw( level page_num block_num par_num line_num word_num conf text rect )){
-    $key{$_}=$_;
-  };
-  for(values %key) {
-    s{_num}{};
-  };
-  *DEBUG=\$Tsv::DEBUG;
-  undef &head;
+  *key=\%Rosetta::key;
 };
 my(@word);
 
@@ -33,9 +26,8 @@ sub new {
   my($self)={@_};
   $self->{rect}=TsvRect->take_data($self);
   for my $old(keys %$self){
-    $self->{$key{$old}}=delete $self->{$old} if $key{$old};
+    $self->{$key{$old}{perl}}=delete $self->{$old} if $key{$old};
   };
-#      U::eex( \$self);
   return () if $self->{level}==5 and $self->{text} !~ m{\S};
   $self=$class->SUPER::new(%$self);
   warn U::pp($self) if $self->{text} =~ m@Hash@;

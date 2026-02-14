@@ -1,9 +1,12 @@
 package TsvDB;
 use base 'Exporter';
 use DBI;
+use Carp qw( confess croak );
+use Carp::Always;
 use Nobody::Util;
 use common::sense;
 use Time::HiRes qw(time);
+use Rosetta;
 use lib "lib";
 use Tsv;
 our(@EXPORT);
@@ -24,52 +27,54 @@ BEGIN {
     local(@_)=@_;
     state(@head);
     @head=head('db') unless @head;
-#        eex(@head);
-    shift(@head) if $head[0]eq'tsv';
-#        eex(@head);
+    confess "left is in head!" if grep { $_ eq "left" } @head;
+    shift(@head) while $head[0]eq'tsv';
     state($head);
     $head//=join(", ",@head);
     state($body);
     $body//=join(", ", map { "?" } @head);
     state($sql);
-    $sql//="COPY tsv_tmp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
-    dbh->do("delete from tsv_tmp");
+    our(%key);
+    local(*key)=\%Rosetta::key;
+#        $sql//="COPY tsv_tmp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
+    $sql//="insert into tsv($head) values ($body) on conflict do nothing";
+    dbh->do("delete from tsv");
     state($sth);
     $sth//=dbh->prepare($sql);
-    for (@_){
-      my($word)=$_;
-      my($rect)=$word->{rect};
-      my(@data);
-
-      for(@head){
-        if($rect->can($_)){
-          push(@data,$rect->$_());
-        } elsif ( $_ ne "word" and $word->can($_) ) {
-          push(@data,$word->$_());
-        } else {
-          push(@data,$word->{$_});
+    my(@xlate)=map { $key{$_}{tsv} || $_ } @head;
+    eex("$#head @head");
+    eex("$#xlate @xlate");
+    for (@_) {
+      my($data)=$_;
+      if($data->{text} =~ m{\S}){
+        my(@data)=map { $data->{$_} } @xlate;
+        eval {
+          $sth->execute(@data);
         };
+        if("$@") {
+          eex("$#data @data");
+          die "$@";
+        };
+      } else {
+        $_=undef;
       };
-      {
-        local(@_);
-        for(0 .. -1+max(scalar(@data),scalar(@head))){
-          push(@_,$head[$_],$data[$_]);
-        };
-#            eex(\@_);
-      }
-      $data[$#data]=~s{\\}{\\\\}g;
-      $_=join("\t",@data);
-#          eex($_);
     };
-    $sth->execute();
-    dbh->pg_putcopydata(join("\n",@_,""));
-    dbh->pg_endcopy();
-    dbh->do( "delete from tsv; insert into tsv (select * from tsv_tmp_v order by tsv );");
+#        for(@_) {
+#          next unless defined;
+#          die "bad row: ($#_,@_)" unless @_==12;
+#          eex($_);
+#          1 while(chomp);
+#          dbh->pg_putcopydata(join("\n",$_,""));
+#          dbh->pg_endcopy();
+#          $sth->execute();
+#    
+#        };
+#        dbh->pg_endcopy();
   };
   sub tsv_select {
     local(@_)=@_;
     my($where)=@_?join("",@_):"null is null";
-    my(@tsv)=hash_fetch("select * from tsv where $where order by page, line, x1");
+    my(@tsv)=hash_fetch("select * from tsv where $where order by doc, page_num, line_num, left_px");
     @tsv;
   }
   sub tsv_fetch_range {
@@ -96,7 +101,7 @@ BEGIN {
 #    };
 sub dsn {
   state($dsn);
-  $dsn//= "dbi:Pg:dbname=nn";
+  $dsn//= "dbi:Pg:";
   return $dsn;
 }
 sub dbh {
@@ -110,18 +115,17 @@ sub dbh {
 }
 {
   my(%head);
-  my(@fs_head,@db_head);
+  our(%key);
+  *key=\%Rosetta::key;
   sub head {
+    state(@fs_head,@db_head);
     unless(@fs_head and @db_head){
       my $file=path("tsv")->child('202?-Q?-???.tsv');
       ($file)=glob("$file");
       (@fs_head)=map { split } qx(head -n 1 $file);
-      for(map { "$_" } @fs_head) {
-        if(m{left|top|width|height}){
-          $_=$TsvRect::key{$_};
-        };
-        push(@db_head, $_);
-      };
+      for my $name(map { "$_" } @fs_head) {
+        push(@db_head,$key{$name}{db}//=$name);
+      }
       push(@db_head,"reject",pop(@db_head));
       unshift(@db_head,"tsv","doc");
     };

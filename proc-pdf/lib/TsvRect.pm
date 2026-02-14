@@ -1,8 +1,11 @@
 package TsvRect;
 use common::sense;
 use Tsv;
+use Rosetta;
 our(@ISA)=qw(TSV);
 use common::sense;
+use Nobody::PP qw(pp);
+use Nobody::PP;
 {
   package U;
   use Carp::Always;
@@ -11,19 +14,18 @@ use common::sense;
   use Carp qw(carp cluck croak confess);
 };
 use Exporter qw(import);
-our(%key);
 our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
 our(@prim);
-BEGIN {
-  $key{$_}="x1" for qw( l left x x1 );
-  $key{$_}="x2" for qw( r right x2 );
-  $key{$_}="y1" for qw( t top y y1 );
-  $key{$_}="y2" for qw( b bottom y2 );
-  $key{$_}="dx" for qw( w width dx );
-  $key{$_}="dy" for qw( h height dy );
-};
+#    BEGIN {
+#      for my $a(keys %Rosetta::key){
+#        next unless exists $Rosetta::key{$a}{perl};
+#        $xkey{$a}=$Rosetta::key{$a};
+#        $key{$a}=$Rosetta::key{$a}{perl};
+#      };
+#      @xkey=@Rosetta::spec;
+#    }
 sub dx {
   die "usage: \$r->dx" unless @_==1;
   my($self)=shift;
@@ -79,12 +81,16 @@ BEGIN {
   *w=\&dx; *width=\&dx;
   *h=\&dy; *height=\&dy;
 };
+our(%key);
+BEGIN {
+  *key=\%Rosetta::key;
+};
 sub new {
   local(@_)=@_;
   my($save)=U::pp(\@_);
   my($class)=U::class(shift);
   @_ = U::flatten(@_);
-  @_ = map { $key{$_} or $_ } @_;
+  @_ = map { $key{$_}{perl} or $_ } @_;
   my(%tmp)=@_;
   for( [ qw(dx x1 x2) ], [ qw(dy y1 y2) ] ) {
     my($d,$a,$b)=map { \$tmp{$_} } @$_;
@@ -108,6 +114,7 @@ sub new {
       } elsif (defined($$a) and defined($$b)) {
         $$d=$$b-$$a;
       } else {
+        eex(\%tmp);
         die "too few values: ", pp(\%tmp);
       };
 #          U::eex( \%tmp, 0+$$a, 0+$$b, 0+$$d );
@@ -122,14 +129,13 @@ sub take_data {
   my($class)=U::class(shift);
   my($hash)=shift;
   my(%hash);
-  for(keys %$hash) {
-    my($rep)=$key{$_};
-    next unless defined $rep;
-    $hash{$rep}=delete $hash->{$_};
+  my(%xlat)=do {
+    @_=map { @$_, reverse @$_ } map { [ $key{$_}{perl}, $key{$_}{tsv} ]  } qw(dx dy x1 x2 y1 y2);
   };
-  return () unless keys %hash;
-  die "could not find stuff" unless keys(%hash)==4;
-  $class->new(\%hash);
+  for(map { $xlat{$_} } grep { defined } map { $xlat{$_} } keys %{$hash}) {
+    $hash{$xlat{$_}}=delete $hash->{$_};
+  };
+  $class->new(%hash);
 };
 sub nsort {
   return sort { $a <=> $b } @_;
@@ -279,4 +285,8 @@ unless(caller){
 #      );
 #      eex($r3);
 };
+unless(caller) {
+  exec "vi-perl", "bin/tsv-pg";
+} 
 1;
+
