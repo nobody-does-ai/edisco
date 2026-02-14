@@ -34,34 +34,6 @@ CREATE TABLE public.acct (
 ALTER TABLE public.acct OWNER TO nn;
 
 --
--- Name: doc; Type: TABLE; Schema: public; Owner: nn
---
-
-CREATE TABLE public.doc (
-    doc integer NOT NULL,
-    file text NOT NULL,
-    year integer,
-    quarter integer
-);
-
-
-ALTER TABLE public.doc OWNER TO nn;
-
---
--- Name: doc_doc_seq; Type: SEQUENCE; Schema: public; Owner: nn
---
-
-ALTER TABLE public.doc ALTER COLUMN doc ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.doc_doc_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
 -- Name: marker_text; Type: VIEW; Schema: public; Owner: nn
 --
 
@@ -99,19 +71,18 @@ ALTER TABLE public.msg OWNER TO nn;
 
 CREATE TABLE public.tsv (
     tsv bigint,
-    doc integer,
     level integer,
-    page_num integer,
-    block_num integer,
-    par_num integer,
-    line_num integer,
-    word_num integer,
-    left_px integer,
-    top_px integer,
-    width_px integer,
-    height_px integer,
-    x_range int4range GENERATED ALWAYS AS (int4range(LEAST(left_px, (left_px + width_px)), GREATEST(left_px, (left_px + width_px)), '[)'::text)) STORED,
-    y_range int4range GENERATED ALWAYS AS (int4range(LEAST(top_px, (top_px + height_px)), GREATEST(top_px, (top_px + height_px)), '[)'::text)) STORED,
+    year integer,
+    quarter integer,
+    page integer,
+    block integer,
+    par integer,
+    line integer,
+    word integer,
+    y1 integer,
+    y2 integer,
+    x1 integer,
+    x2 integer,
     conf double precision,
     text text,
     reject integer
@@ -121,21 +92,94 @@ CREATE TABLE public.tsv (
 ALTER TABLE public.tsv OWNER TO nn;
 
 --
+-- Name: tsv_markers; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_markers AS
+ SELECT tsv.tsv,
+    tsv.level,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.y1,
+    tsv.y2,
+    tsv.x1,
+    tsv.x2,
+    tsv.conf,
+    tsv.text,
+    marker_text.prim
+   FROM public.tsv,
+    public.marker_text
+  WHERE ((tsv.text = marker_text.text) AND (tsv.reject = 0));
+
+
+ALTER TABLE public.tsv_markers OWNER TO nn;
+
+--
+-- Name: tsv_pairs; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_pairs AS
+ SELECT tsv_markers.tsv AS tsv0,
+    tsv_markers.text AS text0,
+    tsv_markers.prim,
+    lead(tsv_markers.tsv) OVER (ORDER BY tsv_markers.page, tsv_markers.y1, tsv_markers.x1, tsv_markers.level) AS tsv1,
+    lead(tsv_markers.text) OVER (ORDER BY tsv_markers.page, tsv_markers.y1, tsv_markers.x1, tsv_markers.level) AS text1
+   FROM public.tsv_markers
+  ORDER BY tsv_markers.page, tsv_markers.y1, tsv_markers.x1, tsv_markers.level;
+
+
+ALTER TABLE public.tsv_pairs OWNER TO nn;
+
+--
+-- Name: tsv_range; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_range AS
+ SELECT rank() OVER (ORDER BY tsv_pairs.tsv0) AS rid,
+    tsv.tsv,
+    tsv.level,
+    tsv.year,
+    tsv.quarter,
+    tsv.page,
+    tsv.block,
+    tsv.par,
+    tsv.line,
+    tsv.word,
+    tsv.y1,
+    tsv.y2,
+    tsv.x1,
+    tsv.x2,
+    tsv.conf,
+    tsv.text,
+    tsv.reject
+   FROM public.tsv,
+    public.tsv_pairs
+  WHERE ((tsv.tsv >= tsv_pairs.tsv0) AND (tsv.tsv < tsv_pairs.tsv1) AND (tsv_pairs.prim = 1) AND (tsv.reject = 0))
+  ORDER BY tsv.page, tsv.line, tsv.tsv;
+
+
+ALTER TABLE public.tsv_range OWNER TO nn;
+
+--
 -- Name: tsv_tmp; Type: TABLE; Schema: public; Owner: nn
 --
 
 CREATE UNLOGGED TABLE public.tsv_tmp (
-    doc integer,
     level integer,
-    page_num integer,
-    block_num integer,
-    par_num integer,
-    line_num integer,
-    word_num integer,
-    left_px integer,
-    top_px integer,
-    width_px integer,
-    height_px integer,
+    y integer,
+    q integer,
+    page integer,
+    block integer,
+    par integer,
+    line integer,
+    word integer,
+    x1 integer,
+    y1 integer,
+    dx integer,
+    dy integer,
     conf double precision,
     text text,
     reject integer
@@ -143,6 +187,33 @@ CREATE UNLOGGED TABLE public.tsv_tmp (
 
 
 ALTER TABLE public.tsv_tmp OWNER TO nn;
+
+--
+-- Name: tsv_tmp_v; Type: VIEW; Schema: public; Owner: nn
+--
+
+CREATE VIEW public.tsv_tmp_v AS
+ SELECT rank() OVER (ORDER BY tsv_tmp.y, tsv_tmp.q, tsv_tmp.page, tsv_tmp.y1, tsv_tmp.x1, tsv_tmp.level) AS tsv,
+    tsv_tmp.level,
+    tsv_tmp.y AS year,
+    tsv_tmp.q AS quarter,
+    (((tsv_tmp.y * 1000) + (tsv_tmp.q * 100)) + tsv_tmp.page) AS page,
+    tsv_tmp.block,
+    tsv_tmp.par,
+    tsv_tmp.line,
+    tsv_tmp.word,
+    tsv_tmp.y1,
+    (tsv_tmp.dy + tsv_tmp.y1) AS y2,
+    tsv_tmp.x1,
+    (tsv_tmp.dx + tsv_tmp.x1) AS x2,
+    tsv_tmp.conf,
+    tsv_tmp.text,
+    tsv_tmp.reject
+   FROM public.tsv_tmp
+  ORDER BY tsv_tmp.y, tsv_tmp.q, tsv_tmp.page, tsv_tmp.y1, tsv_tmp.x1, tsv_tmp.level;
+
+
+ALTER TABLE public.tsv_tmp_v OWNER TO nn;
 
 --
 -- Name: tsv_tsv_seq; Type: SEQUENCE; Schema: public; Owner: nn
@@ -196,22 +267,6 @@ ALTER TABLE ONLY public.acct
 
 
 --
--- Name: doc doc_file_key; Type: CONSTRAINT; Schema: public; Owner: nn
---
-
-ALTER TABLE ONLY public.doc
-    ADD CONSTRAINT doc_file_key UNIQUE (file);
-
-
---
--- Name: doc doc_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
---
-
-ALTER TABLE ONLY public.doc
-    ADD CONSTRAINT doc_pkey PRIMARY KEY (doc);
-
-
---
 -- Name: msg msg_pkey; Type: CONSTRAINT; Schema: public; Owner: nn
 --
 
@@ -225,28 +280,6 @@ ALTER TABLE ONLY public.msg
 
 ALTER TABLE ONLY public.xact
     ADD CONSTRAINT xact_pkey PRIMARY KEY (xact);
-
-
---
--- Name: tsv_x_range_gist; Type: INDEX; Schema: public; Owner: nn
---
-
-CREATE INDEX tsv_x_range_gist ON public.tsv USING gist (x_range);
-
-
---
--- Name: tsv_y_range_gist; Type: INDEX; Schema: public; Owner: nn
---
-
-CREATE INDEX tsv_y_range_gist ON public.tsv USING gist (y_range);
-
-
---
--- Name: tsv tsv_doc_fkey; Type: FK CONSTRAINT; Schema: public; Owner: nn
---
-
-ALTER TABLE ONLY public.tsv
-    ADD CONSTRAINT tsv_doc_fkey FOREIGN KEY (doc) REFERENCES public.doc(doc);
 
 
 --
