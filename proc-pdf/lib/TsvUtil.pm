@@ -169,6 +169,21 @@ sub png_to_tsv {
   };
   return $of;
 };
+INIT {
+  my(%trig);
+  %trig=(
+    qw(
+    TRANSACTIONS 2
+    INVESTMENTS 2
+    INSURED 1
+    Page 1
+    Program 1
+    )
+  );
+  sub trig {
+    return $trig{$_};
+  };
+};
 sub pdf_to_pgs {
   die "usage: pdf_to_pgs(\$pdf)" unless @_;
   return map { pdf_to_pgs($_) } @_ unless 1==@_;

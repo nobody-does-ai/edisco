@@ -22,6 +22,53 @@ BEGIN {
   use subs (@EXPORT);
   undef &head;
 };
+BEGIN {
+  package AutoSet;
+  sub TIESCALAR {
+    *class=*main::class;
+    local(@_)=@_;
+    my($class)=class(shift);
+    my($self)=[undef];
+    my($ref)=shift;
+    die "not a reference to glob" unless ref($ref)eq'GLOB';
+    push(@$self,$ref);
+    bless($self,$class);
+  };
+  sub STORE {
+    my $self=shift;
+    *{$self->[1]}=$self->[0]=shift;
+  };
+  sub FETCH {
+    my $self=shift;
+    $self->[0];
+  };
+  sub DESTROY {
+  };
+  package ColList;
+  our($self,%self);
+  BEGIN { tie $self, 'AutoSet', \*self };
+  sub new {
+    my($class)=class(shift);
+    my($tab)=shift;
+    my(@col)=splice(@_);
+    $self={};
+    bless($self,$class);
+  };
+  sub call {
+    $self=shift;
+    die unless \%self eq $self;
+  };
+};
+BEGIN {
+  our($self,%self);
+  tie $self,'AutoSet', \*self;
+  @_= { this => is => a => test => this => is => only => a => test => };
+  
+  $DB::single=1;
+  eex(\%self);
+  $self=shift(@_);
+  eex(\%self);
+};
 {
   sub tsv_insert {
     local(@_)=@_;
@@ -36,41 +83,39 @@ BEGIN {
     state($sql);
     our(%key);
     local(*key)=\%Rosetta::key;
-#        $sql//="COPY tsv_tmp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
-    $sql//="insert into tsv($head) values ($body) on conflict do nothing";
+    $sql//="COPY tsv_tmp ($head) FROM STDIN WITH (FORMAT text, DELIMITER E'\t', NULL '\\N')";
+#        $sql//="insert into tsv($head) values ($body) on conflict do nothing";
     dbh->do("delete from tsv");
     state($sth);
     $sth//=dbh->prepare($sql);
     my(@xlate)=map { $key{$_}{tsv} || $_ } @head;
     eex("$#head @head");
     eex("$#xlate @xlate");
-    for (@_) {
-      my($data)=$_;
-      if($data->{text} =~ m{\S}){
-        my(@data)=map { $data->{$_} } @xlate;
-        eval {
-          $sth->execute(@data);
+    if($sql =~ m{^insert}i) {
+      for (@_) {
+        my($data)=$_;
+        if($data->{text} =~ m{\S}){
+          my(@data)=map { $data->{$_} } @xlate;
+          eval {
+            $sth->execute(@data);
+          };
+          if("$@") {
+            eex("$#data @data");
+            die "$@";
+          };
+        } else {
+          $_=undef;
         };
-        if("$@") {
-          eex("$#data @data");
-          die "$@";
-        };
-      } else {
-        $_=undef;
       };
+    } else {
+      @_=grep { defined } @_;
+      @_=map { split m{\n} } @_;
+      $_=join("\n",@_,"");
+      $sth->execute();
+      dbh->pg_putcopydata(join("\n",$_,""));
+      dbh->pg_endcopy();
     };
-#        for(@_) {
-#          next unless defined;
-#          die "bad row: ($#_,@_)" unless @_==12;
-#          eex($_);
-#          1 while(chomp);
-#          dbh->pg_putcopydata(join("\n",$_,""));
-#          dbh->pg_endcopy();
-#          $sth->execute();
-#    
-#        };
-#        dbh->pg_endcopy();
-  };
+  }
   sub tsv_select {
     local(@_)=@_;
     my($where)=@_?join("",@_):"null is null";

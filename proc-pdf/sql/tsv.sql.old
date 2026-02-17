@@ -28,7 +28,7 @@ SET default_table_access_method = heap;
 CREATE TABLE public.doc (
     doc integer NOT NULL,
     file text NOT NULL,
-    page int4multirange DEFAULT '{}'::int4multirange NOT NULL
+    pages integer NOT NULL
 );
 
 

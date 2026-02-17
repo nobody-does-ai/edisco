@@ -25,7 +25,6 @@ $|++;
 sub nsort {
   sort { $a <=> $b } @_;
 };
-my(%trig);
 sub main {
   my(@tsv)=map { path($_) } glob("tsv/202?-Q?-???.tsv");
   my($res)=TsvDB::hash_fetch("select * from tsv_range order by rid, tsv");
@@ -49,17 +48,6 @@ sub main {
   invest(@inv);
   exit(0);
 }
-INIT {
-  %trig=(
-    qw(
-    TRANSACTIONS 2
-    INVESTMENTS 2
-    INSURED 1
-    Page 1
-    Program 1
-    )
-  );
-};
 my(%hist);
 sub avg { 
   return sum(@_)/@_;

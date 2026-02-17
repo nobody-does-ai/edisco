@@ -3,6 +3,7 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
+use lib 'lib';
 use common::sense;
 use GDUtil;
 use autodie;
@@ -12,35 +13,76 @@ use Carp qw( croak confess carp cluck );
 use Carp::Always;
 use Tsv;
 use TsvDB;
-use vars qw($coder);
-*coder=\$Tsv::coder;
-use feature qw(signatures);
 use Term::Table;
 our(@VERSION) = qw( 0 1 0 );
-sub main {
-  my($txt)=chr(0xc2).chr(0xa2);
-  my($tgt)=qr{$txt};
-  my(%tgt);
-  our(%word);
-  *word=dbh->selectall_hashref("select * from tsv order by tsv","tsv");
-  our(@word);
-  @word = map { $word{$_} } sort { $a<=>$b } keys %word;
-  my @th=qw( tsv line y1 y2 x1 x2 text );
-  my @tr;
-  for my $word(@word) {
-    push(@tr, [ map { $word->{$_} } @th ]);
+{
+  package snitch;
+  *eex=*main::eex;
+  sub TIESCALAR {
+    my($s);
+    return bless(\$s);
   };
-  my($t)=Term::Table->new(
-    header=>\@th,
-    rows=>\@tr,
-  ); 
-  say $_ for $t->render;
-  exit(0);
-  for(@word) {
-    eex($_->{tsv}, $_->{line});
+  sub TIEARRAY {
+    my(@a);
+    return bless(\@a);
+  }
+  sub TIEHASH {
+    my(%h);
+    return bless(\%h);
   };
-
+  sub STORE {
+  };
+  sub FETCH {
+  };
+  sub DESTROY {
+  };
+  our($AUTOLOAD);
+  sub AUTOLOAD {
+    local(@_)=@_;
+    eex($AUTOLOAD,\@_);
+  };
 };
+sub split_ln {
+  map { [ split m{[\r\t]} ] } @_;
+};
+my(@trash);
+sub load_words {
+  local(@_);
+  for(sort glob("tsv/202?-Q?-*.tsv")){
+    push(@_,[TsvWord->parse_file(path($_))]);
+  };
+  return \@_;
+};
+sub main {
+  path("output")->touchpath;
+  system("tail -F output &");
+  open(STDOUT,">output");
+  @_=load_words;
+  my($reftype,$count)=("",0);
+  while(@_){
+    local($_)=shift;
+    eex($_);
+    if($reftype ne ref){
+      say STDERR "\b\b\b\bx$count" if($reftype);
+      $reftype=ref;
+      $count=1;
+      print STDERR "$reftype ...";
+      STDERR->autoflush(1);
+    } else {
+      ++$count;
+    };
+    if(ref eq 'HASH'){
+      push(@_,values %$_);
+    } elsif(ref eq 'ARRAY'){
+      push(@_,@$_);
+    } elsif(ref eq 'REF') {
+      push(@_,$$);
+    } elsif(ref eq 'SCALAR'){
+      push(@_,$$);
+    };
+  };
+};
+END { system qw{fuser -k output}; };
 main
 __DATA__
   exit(0);

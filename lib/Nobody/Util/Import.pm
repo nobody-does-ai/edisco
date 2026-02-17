@@ -3,14 +3,16 @@
 #
 use common::sense;
 package Nobody::Util::Import;
-package Nobody::Util;
 use Nobody::PP;
-our(@EXPORT);
 BEGIN {
   local($_,@_);
   use vars ( 
     qw( @carp %PACK @EXPORT  @EXPORT_OK  @ISA %seen)
   );
+}
+BEGIN {
+  *Nobody::Util::EXPORT=\@EXPORT;
+  *Nobody::Util::EXPORT_OK=\@EXPORT_OK;
   our(%PACK, @subs);
   @subs=qw(
   QX            WNOHANG      avg       class     
@@ -72,8 +74,13 @@ BEGIN {
   $PACK{'Tie::LoudArray'};
   $PACK{'File::stat'}=[ qw( :FIELDS) ];
   for(qw( List::Util Scalar::Util Sub::Util )) {
-    $PACK{$_}='EXPORT_OK';
+    local($_)="$_.pm";
+    s{::}{/}g;
+    require "$_";
   };
+  push(@EXPORT,@List::Util::EXPORT_OK);
+  push(@EXPORT,@Scalar::Util::EXPORT_OK);
+  push(@EXPORT,@Sub::Util::EXPORT_OK);
 }
 BEGIN {
   for(sort keys %PACK) {
@@ -88,7 +95,7 @@ BEGIN {
     my (%log)=( key=>$key, val=>$val );
     push(@log,\%log);
     if(ref($val)){
-      for( "use $key qw( @{$PACK{$key}} );" ) {
+      for( "package Nobody::Util; use $key qw( @{$PACK{$key}} );" ) {
         $log{eval}=$_;
         $log{list}=[ @{$PACK{$key}} ];
         eval;
@@ -129,23 +136,25 @@ BEGIN {
   @EXPORT_OK= List::Util::uniq( sort @EXPORT_OK);
   @EXPORT   = List::Util::uniq( sort @EXPORT   );
 };
-BEGIN {
-  sub FILTER {
-    grep {!m{prototype|all|uniq}} @_;
-  };
-  use base qw( Exporter );
+sub FILTER {
+  grep {!m{prototype|all|uniq}} @_;
 };
-package Nobody::Util::Import;
-our(@ISA);
-@ISA=@ISA=qw();
-close(DATA);
+package Nobody::Util;
+use Nobody::PP;
+use Path::Tiny;
+use List::Util @List::Util::EXPORT_OK;
+BEGIN {
+  my($ExportLevel);
+  my($Verbose);
+  my($Debug);
+  my(%Cache);
+  sub import {
+    my $pkg = shift;
+    my $callpkg = caller($ExportLevel);
+    push(@_,@EXPORT);
+#        eex(pkg=>$pkg, callpkg=>$callpkg,\@_);
+    die unless grep { $_ eq "mesh" } @EXPORT;
+    *{"$callpkg\::$_"} = \&{"$pkg\::$_"} foreach @_;
+  };
+}
 1;
-__DATA__
-
-BEGIN {
-  my ($test);
-  $test=q{ %s("%s test") };
-  for(qw( cluck confess croak carp )) {
-    eval sprintf $test,$_,$_;
-  };
-};

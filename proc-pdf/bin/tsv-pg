@@ -50,24 +50,39 @@ sub hgroup_find {
   sort { $a->x1 <=> $b->x1 } @word;
 };
 sub doc_upsert {
-  my($file,$year,$quarter,$page)=@_;
+  my($doc,$file,$page)=@_;
   state($sth);
   $sth//=dbh->prepare(
-    "insert into doc(file,year,quarter,page) values (?,?,?,int4multirange(int4range(?, ?, '[)'))) ".
+    "insert into doc(doc,file,pages) values (?,?,?) ".
     "on conflict (file) do update set ".
-    "year=excluded.year, quarter=excluded.quarter, page=doc.page + excluded.page ".
+    "doc=excluded.doc,  pages=excluded.pages ".
     "returning doc"
   );
-  $sth->execute($file,$year,$quarter,$page,$page+1);
+  eex($doc,$file,$page);
+  $sth->execute($doc,$file,$page);
   my($doc)=$sth->fetchrow_array;
   return $doc;
+}
+sub pages_to_multirange {
+  my(@page)=sort { $a <=> $b } keys %{ +{ map { 0+$_, 1 } @_ } };
+  my(@range);
+  while(@page) {
+    my($lo)=shift(@page);
+    my($hi)=$lo+1;
+    while(@page and $page[0] == $hi) {
+      $hi++;
+      shift(@page);
+    };
+    push(@range,"[$lo,$hi)");
+  };
+  return "{".join(",",@range)."}";
 }
 sub tsv_fname_parts {
   my($base)=@_;
   my($file,$page) = $base =~ m{^(.+)-([0-9]+)$};
   die "bad tsv filename '$base' (expected <doc>-<page>.tsv)" unless defined $file;
-  my($year,$quarter) = $file =~ m{^([0-9]{4})-Q([1-4])(?:\b|-) };
-  return ($file,$year,$quarter,0+$page);
+  $file =~ m{^([0-9]{4})-Q([1-4])(?:\b|-) };
+  return ($file,0+$page);
 }
 sub png {
   return path("png")->child($_[0]->basename(".tsv").".png");
@@ -173,39 +188,55 @@ sub filter {
 };
 sub main
 {
-  my(@l);
+  my(@l,$all);
+  my($dbh)=dbh;
   local($SIG{__DIE__})=sub { $DB::single=1; die @_; };
   local($SIG{__WARN__})=sub { $DB::single=1; warn @_; };
   eval {
-    dbh->do("delete from tsv");
-  };
-  my(%page);
-  for my $file(sort glob("tsv/202?-Q?-???.tsv")) {
-    my($path)=path($file);
-    my($base)=$path->basename(".tsv");
-    my($doc_file,$y,$q,$page)=tsv_fname_parts($base);
-    my($doc)=doc_upsert($doc_file, $y, $q, $page);
-    $page{$file}={ path=>$path, doc=>$doc, page=>$page, file=>$doc_file };
-  }
-  my(@all);
-  my($y,$q)=(0,0);
-  for my $pg(sort keys %page) {
-    my($prec)=$page{$pg};
-    my($doc,$path,$page)=@{$prec}{qw(doc path page)};
-    eex($prec);
-    my(@word)=TsvWord->parse_file($path);
-    my(@head)=TsvDB::head('fs');
-    @word=no_trash(@word);
-    for(@word) {
-      $_->{doc}=$doc;
-      $_->{reject}//=0;
-      $_->{page_num}=0+$page;
+    $dbh->begin_work;
+    $dbh->do("delete from tsv");
+    $dbh->do("delete from doc");
+    my(%page,%doc);
+    my(@todo)=sort glob("tsv/202?-Q?-???.tsv");
+    die "no files provdied" unless @todo;
+    for my $file(@todo){
+      my($path)=path($file);
+      my($base)=$path->basename(".tsv");
+      my($doc_file,$page)=tsv_fname_parts($base);
+      $page{$file}={ path=>$path, page=>$page, file=>$doc_file };
+      push(@{$doc{$doc_file}{page}},$page);
+    }
+    my($doc_id)=0;
+    for my $doc_file(sort { $a cmp $b } keys %doc) {
+      my($rec)=$doc{$doc_file};
+      my($page)=scalar(@{$rec->{page}});
+      $rec->{doc}=++$doc_id;
+      doc_upsert($rec->{doc},$doc_file,$page);
     };
-    push(@all,@word);
+    my(@all);
+    for my $pg(sort keys %page) {
+      eex({pg=>$pg});
+      my($prec)=$page{$pg};
+      my($doc_file,$path,$page)=@{$prec}{qw(file path page)};
+      my($doc)=$doc{$doc_file}{doc};
+      my(@word)=TsvWord->parse_file($path);
+      @word=no_trash(@word);
+      for(@word) {
+        $_->{doc}=$doc;
+        $_->{reject}//=0;
+        $_->{page_num}=0+$page;
+      };
+      push(@all,@word);
+    };
+    eex(scalar(@all));
+    tsv_insert(@all);
+    $dbh->commit;
   };
-  eex(scalar(@all));
-  tsv_insert(@all);
-#      dbh->disconnect;
+  if("$@") {
+    my($err)="$@";
+    eval { $dbh->rollback };
+    die $err;
+  }
 };
 main;
 END {

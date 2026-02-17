@@ -3,7 +3,9 @@
 #
 package Nobody::Util;
 local($_);
-use Nobody::Util::Import;
+use Nobody::PP;
+our($DEBUG)=0;
+
 use strict;
 use warnings;
 no warnings 'experimental::builtin';
@@ -40,6 +42,7 @@ sub basename {
 sub nsort {
   return sort { $a <=> $b } @_;
 }
+use subs qw( F_GETFL F_SETFL O_NONBLOCK );
 sub getfl(*) {
   my($fh)=shift;
   my($val);
@@ -130,6 +133,7 @@ sub file_id {
   $_=path($_) unless ref($_);
   return undef unless $_->exists;
   $_->stat;
+  use vars qw($st_dev $st_ino);
   my $file_id=sprintf("%016x:%016x",$st_dev,$st_ino);
   return $file_id;
 };
@@ -193,6 +197,8 @@ sub uri {
   die "$@" if "$@";
   return URI->new($_);
 };
+use subs qw(carp confess);
+use subs qw(eex);
 sub maybeRef($) {
   carp "use class, not maybeRef";
   goto \&class;
@@ -291,7 +297,7 @@ sub serial_maker(%) {
           confess "mkdir:$res{fn}:$!";
         };
       } else {
-        if(sysopen($res{fh},$res{fn},Fcntl::O_CREAT|Fcntl::O_EXCL())){
+        if(sysopen($res{fh},$res{fn},O_CREAT()|O_EXCL())){
           eex(\%res);
           return \%res 
         } elsif ( $!{EEXIST} ) {
@@ -399,4 +405,5 @@ Nobody made it because Nobody is as lazy as he is.  It's full of
 ugly hacks, but saves him time.
 
 =cut
+use Nobody::Util::Import;
 1;

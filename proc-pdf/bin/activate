@@ -23,6 +23,7 @@ for(\@PATH, \@PERL5LIB){
 
   @$_=uniq(@$_);
 };
+$ENV{PGDATABASE}="tsv";
 $ENV{BASH_XTRACEFD}=fileno(STDLOG);
 exec "/bin/bash";
 die "exec:/bin/bash:$!";

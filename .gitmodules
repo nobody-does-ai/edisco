@@ -1,0 +1,3 @@
+[submodule "snips"]
+	path = snips
+	url = ./snips/
