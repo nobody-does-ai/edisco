@@ -7,13 +7,12 @@ use Nobody::PP;
 BEGIN {
   local($_,@_);
   use vars ( 
-    qw( @carp %PACK @EXPORT  @EXPORT_OK  @ISA %seen)
+    qw( @carp %PACK @EXPORT  @EXPORT_OK  @ISA %seen @subs )
   );
 }
 BEGIN {
   *Nobody::Util::EXPORT=\@EXPORT;
   *Nobody::Util::EXPORT_OK=\@EXPORT_OK;
-  our(%PACK, @subs);
   @subs=qw(
   QX            WNOHANG      avg       class     
   deparse       dirname      file_id   flatten   
@@ -33,117 +32,96 @@ BEGIN {
   dirname       capture      safe_can child_wait
   safe_isa      nsort ref_count hdump
   );
-  {
-    my %subs;
-    %subs = map { $_, undef } @subs;
-    @subs=keys %subs;
-  };
-  @subs = sort { (length($a)<=>length($b)) or ($a cmp $b) } @subs;
-  my ($row)=@subs/4;
-  my ($k)=0;
-  my (@l);
-  for(my $j=0;$j<4;$j++) {
-    my ($len)=0;
-    for(my $i=0;$i<$row;$i++) {
-      my ($v)=$subs[$k];
-      next unless defined $v;
-      $len=length($v);
-      ++$k;
-      $l[$j][$i]=$v;
-    };
-    my ($pad)=( ' 'x$len);
-    for(my $i=0;$i<$row;$i++) {
-      for($l[$j][$i]){
-          $_=substr("$_$pad",0,$len);
-      };
-      $_=$l[$j];
-      @{$_} = grep { /\S/ } @{$_};
-    };
-  };
-  use subs @subs;
-  push(@EXPORT,@subs);
-  our(@carp);
-  @carp=qw( carp confess croak cluck );
-  $PACK{'Carp'}=[@carp];
+  $PACK{'Carp'}='EXPORT_OK';
   $PACK{'Env'}=[qw( $HOME $PWD @PATH )];
   $PACK{'Fcntl'}=[qw(:seek :mode)];
   $PACK{'FindBin'}='EXPORT_OK';
   $PACK{'Nobody::PP'}="EXPORT_OK subs";
-  $PACK{'Path::Tiny'}=undef;
+  $PACK{'Path::Tiny'}=[qw(path)];
   $PACK{'POSIX'}=[qw(strftime mktime :sys_wait_h )];
   $PACK{'Tie::LoudArray'};
   $PACK{'File::stat'}=[ qw( :FIELDS) ];
-  for(qw( List::Util Scalar::Util Sub::Util )) {
-    local($_)="$_.pm";
-    s{::}{/}g;
-    require "$_";
+  $PACK{"List::Util"}='EXPORT_OK';
+  $PACK{'Scalar::Util'}='EXPORT_OK';
+  $PACK{'Sub::Util'}='EXPORT_OK';
+}
+sub export_ok_ref {
+  local(@_)=@_;
+  my ($pkg) = splice @_;
+  die "no package name" unless defined $pkg && length $pkg;
+
+  (my $file = "$pkg.pm") =~ s{::}{/}g;
+
+  require $file;  # loads but does not import
+
+  no strict 'refs';
+
+  if( defined *{"${pkg}::EXPORT"}{ARRAY} ) {
+    push(@_,@{"${pkg}::EXPORT"});
   };
-  push(@EXPORT,@List::Util::EXPORT_OK);
-  push(@EXPORT,@Scalar::Util::EXPORT_OK);
-  push(@EXPORT,@Sub::Util::EXPORT_OK);
+  if( defined *{"${pkg}::EXPORT_OK"}{ARRAY} ) {
+    push(@_,@{"${pkg}::EXPORT_OK"});
+  };
+  return \@_;
+}
+sub export_slots {
+  my ($pkg,$name,@type) = @_;
+  die "no package name" unless defined $pkg && length $pkg;
+  die "no name" unless defined $name && length $name;
+
+  (my $file = "$pkg.pm") =~ s{::}{/}g;
+
+  require $file;  # loads but does not import
+  my (%res);
+  for( qw(CODE ARRAY SCALAR HASH) ) {
+    my(%res);
+    next unless  defined *{"${pkg}::${name}"}{$_};
+    $res{$_}=*{"${pkg}::${name}"}{$_};
+  };
+  eex(\%res);
+  \%res;
 }
 BEGIN {
-  for(sort keys %PACK) {
-    eval "use $_;";
-  };
-};
-BEGIN {
-  my (@log);
-  for my $key(sort keys %PACK) {
-    die unless length($key);
-    my ($val)=$PACK{$key};
-    my (%log)=( key=>$key, val=>$val );
-    push(@log,\%log);
-    if(ref($val)){
-      for( "package Nobody::Util; use $key qw( @{$PACK{$key}} );" ) {
-        $log{eval}=$_;
-        $log{list}=[ @{$PACK{$key}} ];
+  no strict 'refs';
+  for my $p(sort keys %PACK) {
+    my($i)=$PACK{$p};
+    (my $r =$p)=~s{::}{/}g;
+    local($_)=$p;
+    if($PACK{$_} eq 'EXPORT_OK') {
+      $PACK{$_}=export_ok_ref($_);
+#          eex($PACK{$_});
+    };
+    if(ref($PACK{$_}) eq 'ARRAY'){
+      my(@a)=@{$PACK{$_}};
+      @a = grep { $_ ne "set_prototype" } @a;
+      for( "        ","::Import") {
+        local($_)="package Nobody::Util$_; use $p qw(@a)";
+#            eex($_);
         eval;
-        warn "$@" if "$@";
-      }
-    } elsif(defined($val)) {
-      local(@_)=map { split } $val;
-      for(@_){
-        my $expr=join('','@',$key,'::',$_) ;
-        $log{eval}=$expr;
-        my @val=eval $expr;
-        unless($key eq "Sub::Util") {
-          @val = grep { $_ ne 'set_prototype' } @val;
-        };
-        $log{list}=[ @val ];
-        push(@EXPORT, @val);
-        for( "use $key qw( @val )" ) {
-          my (%sym);
-          for(keys %Nobody::Util::) {
-            $sym{$_}//=0;
-            $sym{$_}--;
-          };
-          eval;
-          warn "$@" if "$@";
-          for(keys %Nobody::Util::) {
-            $sym{$_}//=0;
-            $sym{$_}++;
-          };
-          for(keys %sym) {
-            unless($sym{$_}) {
-              delete $sym{$_};
-            };
-          };
-        };
       };
+      push(@EXPORT,@a);
     };
   };
-  @EXPORT_OK= List::Util::uniq( sort @EXPORT_OK);
-  @EXPORT   = List::Util::uniq( sort @EXPORT   );
+#      eex(\%PACK);
 };
-sub FILTER {
-  grep {!m{prototype|all|uniq}} @_;
+BEGIN {
+  say blessed(bless {}, 'main');
 };
+BEGIN {
+  @EXPORT_OK= uniq( sort @EXPORT_OK);
+  @EXPORT   = uniq( sort @EXPORT   );
+};
+BEGIN {
+  @subs=uniq(@subs);
+  use subs @subs;
+  push(@EXPORT,@subs);
+  our(@carp);
+}
 package Nobody::Util;
 use Nobody::PP;
 use Path::Tiny;
-use List::Util @List::Util::EXPORT_OK;
 BEGIN {
+  *blessed=\&builtin::blessed;
   my($ExportLevel);
   my($Verbose);
   my($Debug);
@@ -152,7 +130,6 @@ BEGIN {
     my $pkg = shift;
     my $callpkg = caller($ExportLevel);
     push(@_,@EXPORT);
-#        eex(pkg=>$pkg, callpkg=>$callpkg,\@_);
     die unless grep { $_ eq "mesh" } @EXPORT;
     *{"$callpkg\::$_"} = \&{"$pkg\::$_"} foreach @_;
   };

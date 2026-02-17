@@ -11,6 +11,7 @@ use warnings;
 no warnings 'experimental::builtin';
 use common::sense;
 use Path::Tiny;
+use Scalar::Util;
 sub open_fds(;$);
 BEGIN {
   sub open_fds(;$) {
@@ -78,6 +79,9 @@ BEGIN {
   sub inode($) {
     return [shift->stat]->[1];
   };
+};
+sub avg {
+  return sum(@_)/@_;
 };
 sub safe_isa {
   my ($self)=shift;

@@ -3,7 +3,6 @@ use common::sense;
 require Exporter;
 BEGIN {
   require JSON::PP;
-  our(@ISA)=qw(JSON::PP);
 };
 BEGIN {
   our($coder);
@@ -11,11 +10,10 @@ BEGIN {
     $coder //= JSON::PP->new->ascii->pretty->allow_nonref->convert_blessed;
   };
   sub encode_json($) {
-    eex( map { ref } @_ );
     coder()->encode(shift);
   };
   sub decode_json($) {
-    coder()->decode($_);
+    coder()->decode(shift);
   };
 };
 BEGIN {
