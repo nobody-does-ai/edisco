@@ -72,14 +72,16 @@ sub median {
 use TsvDoc;
 our($file);
 *file=\$TsvDoc::file;
-my(@tsv)=map{path($_)}glob("tsv/202?-Q?-???");
-for(@tsv) {
-  if(fork) {
-    childwait;
-    next;
-  };
-  $file=-$_;
-};
+my($tsv)=path("tsv");
+my(@kid)=$tsv->children;
+eex($_) for $tsv, @kid;
+say for splice(@{$_->lines},0);
+__DATA__
+my(@tsv)=map{path($_)}path("tsv")->ch
+my($base)=split(m{.tsv$},shift(@tsv));
+my($top)=$$;
+my($doc)=TsvDoc->new();
+for($file=path(shift(@tsv)))
 {
   my($base)=$file->basename(".tsv");
   unless(-e "$base.tsv") {

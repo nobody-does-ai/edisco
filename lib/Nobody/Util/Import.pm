@@ -78,7 +78,7 @@ sub export_slots {
     next unless  defined *{"${pkg}::${name}"}{$_};
     $res{$_}=*{"${pkg}::${name}"}{$_};
   };
-  eex(\%res);
+#      eex(\%res);
   \%res;
 }
 BEGIN {
