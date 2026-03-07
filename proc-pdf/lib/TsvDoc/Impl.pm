@@ -3,7 +3,7 @@ use Nobody::Util;
 our(@subs,@vars);
 BEGIN {
   @vars=qw(
-  $file @lines @fields @hdr @idx @page @text @objs @rows @ws @hs
+  $file @lines @fields @hdr @idx @page @text @objs %rows @ws @hs
   );
 
   @subs=grep { length && !/file/ } map { substr($_,1) } @vars;
@@ -77,7 +77,6 @@ sub page {
   unless($page){
     my($obj)=objs->[0];
     $page=$obj;
-    rows();
   }
   return $page;
 };
@@ -153,6 +152,23 @@ sub rows {
     @rows=@a;
   };
   \@rows;
+};
+sub row {
+  my($pg)=@_;
+  my(@o)=grep { $_->{page}==$pg } @{word()};
+  my(@a,@g,@i);
+  while(@o) {
+    my($y2) = 1+min(map { $_->{y1} } @o );
+    while(@i=grep { $o[$_]->{y1}<=$y2 } keys @o){
+      push(@g,map { $o[$_] } @i);
+      @o[@i]=();
+      @o=grep { defined } @o;
+      $y2=max(map{$_->{y2}} @g);
+    };
+    @g=sort { $a->{x1} <=> $b->{x1} } @g;
+    push(@a,[splice(@g)]);
+  };
+  \@a;
 };
 sub ws() {
   unless(@ws){
