@@ -1,105 +1,316 @@
 #!/usr/bin/env perl
-use strict;
-use warnings;
+# mail-clean -- decode raw MIME messages from a maildir into plain RFC 2822
+#
+# Reads every *.eml (or bare md5-named) file from the source maildir's cur/
+# directory, strips MIME structure, extracts the best available text body,
+# saves binary attachments content-addressed to clean/inc/<md5>.<ext>, and
+# writes a clean plain-text message to clean/cur/<md5>.eml.
+#
+# message/rfc822 (forwarded-as-attachment) parts are written as separate
+# messages into clean/cur/ and referenced by a [attached message: <mid>]
+# line in the carrier body.
+#
+# Idempotent: already-processed messages are skipped.
+#
+# Configuration -- edit %opt to change behaviour:
+
 use common::sense;
-use Nobody::Util;
+use Path::Tiny   qw(path);
 use Email::MIME;
-use Digest::MD5 qw(md5_hex);
-use File::Copy;
-sub get_attachment_path {
-    my ($filename) = @_;
-    $filename =~ s/[^a-zA-Z0-9._-]/_/g; # Sanitize
-    
-#        for my $i (0..99) {
-#            my $sub = sprintf("%02d", $i);
-#            my $target = $att_root->child($sub, $filename);
-#            return $target unless $target->exists;
-#        }
-    # Fallback to timestamped if all 100 slots for that name are full
-    return $att_root->child("00", time . "_" . $filename);
+use Digest::MD5  qw(md5_hex);
+use MIME::Base64 qw(decode_base64);
+use POSIX        qw(strftime);
+use Encode       qw(decode encode find_encoding);
+
+my %opt = (
+  src     => './mail/sms',    # source maildir root (gmail-imap writes here)
+  clean   => './mail/dir',    # output maildir root
+  domain  => 'sms.org',       # domain for generated Message-IDs
+);
+
+# ------------------------------------------------------------------ helpers --
+
+# Map content-types to file extensions for attachments.
+my %CT_EXT = (
+  'image/jpeg'                => 'jpg',
+  'image/jpg'                 => 'jpg',
+  'image/png'                 => 'png',
+  'image/gif'                 => 'gif',
+  'image/webp'                => 'webp',
+  'image/bmp'                 => 'bmp',
+  'image/tiff'                => 'tif',
+  'video/mp4'                 => 'mp4',
+  'video/3gpp'                => '3gp',
+  'video/3gpp2'               => '3g2',
+  'video/quicktime'           => 'mov',
+  'video/webm'                => 'webm',
+  'audio/mpeg'                => 'mp3',
+  'audio/mp4'                 => 'm4a',
+  'audio/amr'                 => 'amr',
+  'audio/ogg'                 => 'ogg',
+  'audio/wav'                 => 'wav',
+  'application/pdf'           => 'pdf',
+  'application/ms-tnef'       => 'bin',   # winmail.dat -- fuck tnef
+  'application/octet-stream'  => 'bin',
+  'text/vcard'                => 'vcf',
+  'text/x-vcard'              => 'vcf',
+  'message/rfc822'            => 'eml',
+);
+
+sub ct_ext {
+  my ($ct) = @_;
+  $ct = lc($ct // '');
+  $ct =~ s/;.*//;
+  $ct =~ s/\s+//g;
+  return $CT_EXT{$ct} // 'bin';
 }
 
-sub main {
-  my $mail_root = path("./mail/dir");
-  my $att_root  = $mail_root->child("att");
-};
+# Save bytes to inc/<md5>.<ext>; skip write if already present.
+# Returns bare filename.
+sub save_att {
+  my ($incdir, $ct, $bytes) = @_;
+  return undef unless defined $bytes && length($bytes);
+  my $md5 = md5_hex($bytes);
+  my $fn  = "$md5." . ct_ext($ct);
+  my $dst = $incdir->child($fn);
+  unless (-e $dst) {
+    my $tmp = $incdir->child("$fn.tmp");
+    $tmp->spew_raw($bytes);
+    $tmp->move($dst);
+  }
+  return $fn;
+}
 
-#            my ($part) = @_;
-#            say "";
-#            say "1: $part";
-#            return if $part->parts > 1; # Skip container parts
-#            say "2: $part";
-        
-#            my $type = $part->contentType || 'text/plain';
-#            my $disp = $part->header('Content-Disposition') || '';
-#            my $name = $part->filename || 'unnamed_attachment';
-#    
-#            # Case 1: Plain Text Body
-#            if ($type =~ m{text/plain}i && $disp !~ /attachment/i) {
-#                push @new_body, $part->body_str;
-#            }
-#            # Case 2: HTML Body (Convert to text via links)
-#            elsif ($type =~ m{text/html}i && $disp !~ /attachment/i) {
-#                my $temp_html = Path::Tiny->tempfile;
-#                $temp_html->spew_raw($part->body);
-#                my $plain = qx(links -dump $temp_html);
-#                push @new_body, "--- HTML CONVERTED TO PLAIN TEXT ---\n" . $plain;
-#            }
-#            # Case 3: Attachments
-#            else {
-#                my $att_path = get_attachment_path($name);
-#                $att_path->spew_raw($part->body);
-#                push @attachments_found, $att_path->relative($mail_root);
-#            }
-#        });
+# Decode a text part to a Perl string, trying the declared charset first.
+sub decode_text_part {
+  my ($part) = @_;
+  my $raw = $part->body;
+  my $ct  = $part->content_type // '';
+  my ($charset) = $ct =~ /charset=["']?([^"';\s]+)/i;
+  $charset //= 'UTF-8';
+  my $enc = eval { find_encoding($charset) };
+  if ($enc) {
+    my $str = eval { $enc->decode($raw) };
+    return $str if defined $str;
+  }
+  # Fall back: try UTF-8, then Latin-1
+  for my $fb (qw(UTF-8 iso-8859-1)) {
+    my $str = eval { decode($fb, $raw, Encode::FB_CROAK) };
+    return $str if defined $str;
+  }
+  return $raw;  # give up and return bytes as-is
+}
 
-    # Reconstruct Content
-    my $final_text = join("\n\n", @new_body);
-    if (@attachments_found) {
-        $final_text .= "\n\n--- ATTACHMENTS ---\n";
-        $final_text .= join("\n", @attachments_found) . "\n";
+# Convert HTML to plain text via links -dump.
+sub html_to_text {
+  my ($html_bytes, $charset) = @_;
+  $charset //= 'UTF-8';
+  # Write to a temp file; links reads from a file path
+  my $tmp = Path::Tiny->tempfile(SUFFIX => '.html');
+  $tmp->spew_raw($html_bytes);
+  my $text = qx(links -dump "$tmp" 2>/dev/null);
+  $tmp->remove;
+  return $text // '';
+}
+
+# --------------------------------------------------------- MIME tree walker --
+#
+# Returns: ( $body_text, @att_filenames )
+#
+# $incdir    -- Path::Tiny to the inc/ directory
+# $cleandir  -- Path::Tiny to the clean/cur/ directory (for rfc822 children)
+# $part      -- Email::MIME object
+# $depth     -- recursion depth (to guard against pathological nesting)
+
+sub extract_part {
+  my ($incdir, $cleandir, $part, $depth) = @_;
+  $depth //= 0;
+  return ('', ()) if $depth > 20;   # sanity limit
+
+  my $ct = lc($part->content_type // 'text/plain');
+  $ct =~ s/;.*//;
+  $ct =~ s/\s+//g;
+
+  # ---- multipart/alternative: pick the best single child ------------------
+  if ($ct eq 'multipart/alternative') {
+    my @children = $part->parts;
+    # Rank: text/plain > text/html > anything else
+    my ($plain, $html, $other);
+    for my $c (@children) {
+      my $cct = lc($c->content_type // '');
+      $cct =~ s/;.*//; $cct =~ s/\s+//g;
+      if    ($cct eq 'text/plain') { $plain //= $c }
+      elsif ($cct eq 'text/html')  { $html  //= $c }
+      else                         { $other //= $c }
+    }
+    my $best = $plain // $html // $other // $children[0];
+    return extract_part($incdir, $cleandir, $best, $depth + 1);
+  }
+
+  # ---- multipart/* (mixed, related, signed, etc.): collect all children ---
+  if ($ct =~ m{^multipart/}) {
+    my ($body, @atts) = ('');
+    for my $c ($part->parts) {
+      my $cct = lc($c->content_type // '');
+      $cct =~ s/;.*//; $cct =~ s/\s+//g;
+      # Skip the container itself if Email::MIME hands it back to us
+      next if $cct eq $ct && scalar($c->parts) == scalar($part->parts);
+      my ($cbody, @catts) = extract_part($incdir, $cleandir, $c, $depth + 1);
+      if ($cbody ne '') {
+        $body .= "\n\n" if $body ne '';
+        $body .= $cbody;
+      }
+      push @atts, @catts;
+    }
+    return ($body, @atts);
+  }
+
+  # ---- message/rfc822: forwarded message ----------------------------------
+  if ($ct eq 'message/rfc822') {
+    my $raw_inner = $part->body;   # raw RFC 2822 bytes of the inner message
+    return ('', ()) unless length($raw_inner);
+
+    # Parse and clean the inner message recursively
+    my $inner = eval { Email::MIME->new($raw_inner) };
+    return ('', ()) unless $inner;
+
+    my $mid = $inner->header('Message-ID') // '';
+    $mid =~ s/^\s*<//; $mid =~ s/>\s*$//; $mid =~ s/\s+//g;
+
+    # Generate a stable filename for the inner message
+    my $clean_raw = clean_message($incdir, $cleandir, $inner);
+    my $fn_md5    = md5_hex(encode('UTF-8', $clean_raw));
+    my $fn        = "$fn_md5.eml";
+    my $dst       = $cleandir->child($fn);
+    unless (-e $dst) {
+      my $tmp = $cleandir->child("$fn.tmp");
+      $tmp->spew_utf8($clean_raw);
+      $tmp->move($dst);
     }
 
-    # Atomic update: Replace original file with simplified version
-    my $header_obj = $parsed->header_obj;
-    say for $header_obj->header_names;
-#        my $new_msg = Email::MIME->create(
-#            header_str => [
-#                map { $_ => $header_obj->header($_) } $header_obj->header_names
-#            ],
-#            parts => [ $final_text ],
-#        );
-#    
-#        $file->spew_raw($new_msg->as_string);
-    {;}
+    my $ref = $mid ne '' ? "<$mid>" : $fn;
+    return ("[attached message: $ref]\n", ());
+  }
 
-# Process all files in cur/
-log_msg("Post-processing cur/ directory...");
-for my $file ($mail_root->child("cur")->children) {
-    next if $file->is_dir;
-    eval { process_message($file) };
-    warn "Error processing $file: $@\n" if $@;
-}
-sub process_message {
-  my ($file) = @_;
-  my $raw = $file->slurp_raw;
-  my $parsed = Email::MIME->new($raw);
+  # ---- text/plain ---------------------------------------------------------
+  if ($ct eq 'text/plain') {
+    my $disp = lc($part->header('Content-Disposition') // '');
+    my $text = decode_text_part($part);
+    $text =~ s/\r\n/\n/g;
+    $text =~ s/\r/\n/g;
+    # If explicitly marked as attachment, save to inc/ unless body is empty
+    if ($disp =~ /attachment/ && $text =~ /\S/) {
+      # Still usable as body fallback -- caller decides; return as body
+      return ($text, ());
+    }
+    return ($text, ());
+  }
 
-  my @new_body;
-  my @attachments_found;
+  # ---- text/html ----------------------------------------------------------
+  if ($ct eq 'text/html') {
+    my $disp = lc($part->header('Content-Disposition') // '');
+    my $raw  = $part->body;
+    my ($charset) = ($part->content_type // '') =~ /charset=["']?([^"';\s]+)/i;
+    my $text = html_to_text($raw, $charset);
+    $text =~ s/\r\n/\n/g;
+    $text =~ s/\r/\n/g;
+    return ($text, ());
+  }
 
-  $parsed->walk_parts(sub {
-      say "@_";
-    });
+  # ---- other text/* -------------------------------------------------------
+  if ($ct =~ m{^text/}) {
+    my $disp = lc($part->header('Content-Disposition') // '');
+    my $text = decode_text_part($part);
+    $text =~ s/\r\n/\n/g;
+    $text =~ s/\r/\n/g;
+    return ($text, ());
+  }
+
+  # ---- binary attachment --------------------------------------------------
+  my $bytes = $part->body;
+  return ('', ()) unless length($bytes);
+  my $fn = save_att($incdir, $ct, $bytes);
+  return ('', defined $fn ? ($fn) : ());
 }
-sub four {
-  return shift, shift, shift, shift;
-};
-sub log_msg {
-  my($text)="@_";
-  eex(four(caller));
-  eex(four(caller(0)));
-  eex(four(caller(1)));
+
+# ------------------------------------------------- clean a single message --
+#
+# Takes an Email::MIME object, returns the clean RFC 2822 string.
+
+sub clean_message {
+  my ($incdir, $cleandir, $msg) = @_;
+
+  # Extract body and attachments
+  my ($body, @atts) = extract_part($incdir, $cleandir, $msg, 0);
+
+  # Trim body
+  $body //= '';
+  $body =~ s/\n{3,}/\n\n/g;
+  $body =~ s/^\n+//;
+  $body =~ s/\n+$/\n/;
+  $body = "[no text body]\n" if $body !~ /\S/;
+
+  # Rebuild headers -- keep the originals, strip MIME-specific ones
+  my @skip_hdrs = qw(
+    content-type content-transfer-encoding content-disposition
+    mime-version content-id content-description
+  );
+  my %skip = map { lc($_) => 1 } @skip_hdrs;
+
+  my @hdrs;
+  for my $name ($msg->header_names) {
+    next if $skip{lc($name)};
+    for my $val ($msg->header($name)) {
+      push @hdrs, "$name: $val";
+    }
+  }
+
+  # Add X-Attachment headers
+  push @hdrs, "X-Attachment: $_" for @atts;
+
+  return join("\n", @hdrs, "", $body);
 }
-};
-main(@ARGV);
+
+# -------------------------------------------------------------------  main --
+
+sub main {
+  my $srcdir   = path($opt{src});
+  my $cleandir = path($opt{clean});
+  my $incdir   = $cleandir->child('inc')->mkdir;
+  $cleandir->child($_)->mkdir for qw(cur new tmp);
+
+  my $cur = $srcdir->child('cur');
+  die "Source cur/ not found: $cur\n" unless -d $cur;
+
+  my @files = sort grep { -f $_ } $cur->children;
+  my ($done, $skip, $err) = (0, 0, 0);
+
+  for my $src (@files) {
+    my $bn = $src->basename;
+    next if $bn =~ /^\./;   # skip .md5 etc
+
+    my $raw = eval { $src->slurp_raw };
+    if ($@) { warn "Cannot read $src: $@\n"; $err++; next }
+
+    my $msg = eval { Email::MIME->new($raw) };
+    if ($@) { warn "Cannot parse $src: $@\n"; $err++; next }
+
+    my $clean = eval { clean_message($incdir, $cleandir->child('cur'), $msg) };
+    if ($@) { warn "Cannot clean $src: $@\n"; $err++; next }
+
+    my $fn  = md5_hex(encode('UTF-8', $clean)) . '.eml';
+    my $dst = $cleandir->child('cur', $fn);
+
+    if (-e $dst) { $skip++; next }
+
+    my $tmp = $cleandir->child('tmp', $fn);
+    eval { $tmp->spew_utf8($clean); $tmp->move($dst) };
+    if ($@) { warn "Cannot write $dst: $@\n"; $err++; next }
+
+    $done++;
+  }
+
+  warn "Done. written=$done skipped=$skip errors=$err\n";
+}
+
+main();

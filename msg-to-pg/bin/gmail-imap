@@ -18,15 +18,14 @@ use JSON::PP ();
 my $config = {
     imap_server   => 'imap.gmail.com',
     imap_port     => 993,
-    download_dir  => './mail',
-    index_json    => './mail/index.json',
+    index_json    => 'mail/index.json',
     target_label  => '[Gmail]/All Mail',
     # If you ever change this, also change the on-disk layout accordingly.
-    maildir_root  => 'dir',
+    maildir_root  => 'mail',
 };
 
 # Setup Maildir structure
-my $base_path = path($config->{download_dir});
+my $base_path = path(".");
 my $dir = $base_path->child($config->{maildir_root});
 $dir->child($_)->mkdir for qw(cur new tmp);
 
@@ -159,13 +158,13 @@ sub clean_maildir_cur {
         }
 
         # Otherwise: renamed by reader or otherwise non-canonical => rename to md5(content)
-        my $target = $cur_dir->child($md5);
+        my $target = $cur_dir->child($md5.".eml");
         if ($target->exists) {
             # duplicate content; delete the renamed copy
             log_msg("WARNING: cur/$bn renamed; canonical cur/$md5 already exists. Deleting cur/$bn.");
             $p->remove;
         } else {
-            log_msg("WARNING: cur/$bn renamed; restoring canonical name cur/$md5.");
+            log_msg("WARNING: cur/$bn renamed; restoring canonical name cur/$md5.eml");
             $p->move($target);
         }
     }
@@ -175,6 +174,7 @@ sub clean_maildir_cur {
     for my $mid (keys %{$idx->{messages}}) {
         my $r = $idx->{messages}{$mid} || next;
         my $m = $r->{md5} // next;
+        $m="$m.eml";
         next if $have{$m};
         log_msg("WARNING: index references missing cur/$m; dropping index record for $mid.");
         drop_message_by_mid($mid);
@@ -247,8 +247,8 @@ eval {
         }
 
         my $md5 = md5_hex($raw);
-        my $cur_target = $dir->child('cur', $md5);
-        my $new_target = $dir->child('new', $md5);
+        my $cur_target = $dir->child('cur', "$md5.eml");
+        my $new_target = $dir->child('new', "$md5.eml");
 
         # Parse headers from raw (avoid per-UID header round-trips)
         my $h = parse_headers_from_raw($raw);

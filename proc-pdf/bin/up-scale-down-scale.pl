@@ -6,59 +6,9 @@ use lib "lib";
 use Nobody::Util;
 use Nobody::PP;
 use Carp::Always;
-
-# ocr_grid_math_v2.pl
-#
-# Changes requested:
-#  (1) Dump "max magnification" view (scaled lattice) for eyeballing/experiments.
-#  (2) Downscale based on AVERAGE density, then adjust DOWNWARD (i.e. reduce k => wider output)
-#      until the scaling can be applied WITHOUT DISCARDING any characters (no collisions).
-#
-# Input: TSV with text + geometry.
-#  - Must contain a text column (text/chr/char/token/value/glyph).
-#  - And either (x,y,w,h) OR (x1,y1,x2,y2).
-#
-# Output:
-#  - Header lines with computed parameters
-#  - MAX MAGNIFICATION dump (ASCII)
-#  - COLLISION-FREE downscaled grid (ASCII)
-#
-# Notes:
-#  - If collisions remain even at k=1 (true identical/rounded coords), we DO NOT discard.
-#    Instead we keep k=1 and "spill right" within the row to preserve every glyph.
-
-#    sub usage {
-#      die <<"USAGE";
-#    Usage:
-#      $0 input.tsv > out.txt
-#    
-#    Optional env vars:
-#      OCR_GRID_TEXT_COL   OCR_GRID_X_COL OCR_GRID_Y_COL OCR_GRID_W_COL OCR_GRID_H_COL
-#      OCR_GRID_X1_COL OCR_GRID_Y1_COL OCR_GRID_X2_COL OCR_GRID_Y2_COL
-#    
-#      OCR_GRID_FILL=' '            fill char (default space)
-#      OCR_GRID_PAD=1               padding cells around grids (default 1)
-#    
-#      OCR_MAG_MAX_DIM=8000         safety cap for max-magnification (default 8000)
-#      OCR_GRID_MAX_COLS=2000       safety cap for downscaled cols (default 2000)
-#      OCR_GRID_MAX_ROWS=2000       safety cap for downscaled rows (default 2000)
-#    
-#      OCR_GRID_SPILL=right|mark    when k==1 still collides: spill right (default right) or mark with '#'
-#    USAGE
-#    }
-
-#    my $i_text = pick_col('OCR_GRID_TEXT_COL', qw(text chr char token value glyph));
-#    my $i_x    = pick_col('OCR_GRID_X_COL',    qw(x cx x_center xcenter));
-#    my $i_y    = pick_col('OCR_GRID_Y_COL',    qw(y cy y_center ycenter));
-#    my $i_w    = pick_col('OCR_GRID_W_COL',    qw(w width));
-#    my $i_h    = pick_col('OCR_GRID_H_COL',    qw(h height));
-#    
-#    my $i_x1   = pick_col('OCR_GRID_X1_COL',   qw(x1 left l));
-#    my $i_y1   = pick_col('OCR_GRID_Y1_COL',   qw(y1 top  t));
-#    my $i_x2   = pick_col('OCR_GRID_X2_COL',   qw(x2 right r));
-#    my $i_y2   = pick_col('OCR_GRID_Y2_COL',   qw(y2 bottom b));
-
-#    die "Need a text column (e.g. text/chr/char/token)\n" unless defined $i_text;
+use JSON::XS qw(encode_json);
+use TsvDoc;
+use TsvDB;
 
 sub median {
   my (@a) = @_;
@@ -69,107 +19,26 @@ sub median {
   return $a[int($n/2)] if $n % 2;
   return ($a[$n/2 - 1] + $a[$n/2]) / 2;
 }
-use TsvDoc;
-our($file);
-*file=\$TsvDoc::file;
-my($tsv)=path("tsv");
-my(@kid)=$tsv->children;
-eex($_) for $tsv, @kid;
-say for splice(@{$_->lines},0);
-__DATA__
-my(@tsv)=map{path($_)}path("tsv")->ch
-my($base)=split(m{.tsv$},shift(@tsv));
-my($top)=$$;
-my($doc)=TsvDoc->new();
-for($file=path(shift(@tsv)))
-{
-  my($base)=$file->basename(".tsv");
-  unless(-e "$base.tsv") {
-    my $cmd;
-    unless(-e "$base.png") {
-      unless(-e "$base.pdf"){
-        die "no input files found";
-      };
-      $cmd="pdftoppm -singlefile -r 300 -png $base.pdf $base";
-      say STDERR $cmd;
-      system $cmd or die "$cmd failed";
-    }
-    $cmd="tesseract $base.png $base tsv";
-    say STDERR $cmd;
-    system $cmd or die "$cmd failed";
+my @rows = @{TsvDoc->rows()};
+eex(scalar(@rows));
+if(my $pid=fork){
+  child_wait;
+} else {
+  open(STDOUT,">","words.json");
+  for(@rows){
+    say encode_json($_);
   };
-  die "no input found" unless -e $file;
+  exit(0);
+}
+sub page {
+  return TsvDoc->page();
 };
-TsvDoc::set_file("input.tsv");
-sub disp {
-  my($data)=shift;
-  if(ref($data) eq "ARRAY"){
-    eex({a=>0+@$data});
-    return join(" ", "A", map { disp($_) } @$data);
-  } else {
-    eex({t=>$data});
-    return $data->{txt};
-  };
-};
-my @word;
-my @rows = grep { $_->[0] } @{TsvDoc->rows()};
 my @text;
-*page=\&TsvDoc::page;
 my ($px1,$px2)=(page()->{x1}, page()->{x2});
-sub stats {
-
-};
-sub cols {
-  my(@cols)=@_;
-  eex(@cols[0]);
-  return;
-  local(*_)=shift;
-  local(@_)=grep { ref($_) eq 'HASH' } @_;
-
-  my(%cols) = map { $_, $_ } @cols;
-  my($len,$cnt)=map { delete $cols{$_} } qw(len cnt);
-  $_=[] for values %cols;
-  $cols{txt}//='';
-  for(@_) {
-    my($w)=$_;
-    for(@cols) {
-      my($c)=$_;
-      push(@{$cols{$c}},$w->{$c});
-    };
-  };
-  \%cols;
-};
-sub do_row(@) {
-  local(*_)=shift;
-  my($cols)=cols(\@_,qw(len txt x1 y1 x2 y2 dx dy));
-  eex($cols);
-  my($y1,$y2,$ww,$ll);
-  for( my $i=0;$i<@_;$i++) {
-    local($_)=$_[$i];
-    if(ref($_)eq'HASH'){
-      $_->{y1}=$y1;
-      $_->{y2}=$y2;
-      $ww+=$_->{dx};
-      $ll+=length($_->{txt})+1;
-      push(@word,$_[$i]);
-    };
-  };
-};
-for(@rows) {
-  eex( join(" ", map { $_->{txt} } @$_ ));
-};
-
-#    for(@rows) {
-#      my(@row)=@$_;
-#      say disp($_);
-#    };
-
 my (@ws, @hs);
-
-
-die "No objects parsed.\n" unless @word;
-@ws=TsvDoc->ws;
-@hs=TsvDoc->hs;
+die "No objects parsed.\n" unless @rows;
+my @ws=TsvDoc->ws;
+my @hs=TsvDoc->hs;
 # "average size of a character"
 sub char_height {
   local(@_)=@_;
@@ -181,13 +50,20 @@ sub char_height {
 sub char_width {
   local(@_)=@_;
   for(@_) {
+    if(ref($_) eq 'ARRAY') {
+      push(@_,@$_);
+      $_=undef;
+    };
+  };
+  @_=grep { defined } @_;
+  for(@_) {
     $_=$_->{w}/length($_->{txt});
   };
   grep { defined } @_;
 };
-my $mw = median(char_width(@word));
+my $mw = median(char_width(@rows));
 eex({mw=>$mw});
-my $mh = median(char_height(@word));
+my $mh = median(char_height(@rows));
 eex({mh=>$mh});
 my $char_avg = ($mw + $mh) / 2;
 eex({char_avg=>$char_avg});
@@ -196,7 +72,7 @@ if($char_avg <= 0) {
 };
 
 # Scale all coords by char_avg ("max magnification lattice")
-for my $o (@word) {
+for my $o (@rows) {
   $o->{sx} = $o->{x} * $char_avg;
   $o->{sy} = $o->{y} * $char_avg;
   $o->{sw} = $o->{w} * $char_avg;
@@ -205,7 +81,7 @@ for my $o (@word) {
 
 # Bounds (in scaled units)
 my ($minx,$miny,$maxx,$maxy);
-for my $o (@word) {
+for my $o (@rows) {
   my $x1 = $o->{sx} - $o->{sw}/2;
   my $x2 = $o->{sx} + $o->{sw}/2;
   my $y1 = $o->{sy} - $o->{sh}/2;
@@ -220,7 +96,7 @@ my $doc_w = $maxx - $minx;  $doc_w = 1 if $doc_w <= 0;
 my $doc_h = $maxy - $miny;  $doc_h = 1 if $doc_h <= 0;
 
 my $N = 0;
-for my $o (@word) {
+for my $o (@rows) {
   # Place each *character* as a point; multi-char tokens count as multiple glyphs.
   $N += length($o->{txt});
 }
@@ -299,7 +175,7 @@ sub collisions_for_k {
   my %seen;
   my $coll = 0;
 
-  for my $o (@word) {
+  for my $o (@rows) {
     my $mx = int(($o->{sx} - $minx));
     my $my = int(($o->{sy} - $miny));
 
@@ -353,7 +229,7 @@ sub place {
 }
 
 # Place all glyphs; if k==1 still collides, preserve by spilling right or marking.
-for my $o (@word) {
+for my $o (@rows) {
   my $mx = int(($o->{sx} - $minx));
   my $my = int(($o->{sy} - $miny));
 
@@ -400,6 +276,7 @@ for my $o (@word) {
 }
 
 open(my $stdout,">&STDOUT");
+my($file)="file";
 open(STDOUT,">$file.upd");
 say "# ----- DOWNSCALED GRID (density k0 -> adjusted downward until collision-free; k=$k; collisions_at_k=$coll) -----";
 for my $r (0..$#grid) {
@@ -409,3 +286,56 @@ for my $r (0..$#grid) {
 }
 say "# ----- END DOWNSCALED GRID -----";
 open(STDOUT,">&".fileno($stdout));
+# ocr_grid_math_v2.pl
+#
+# Changes requested:
+#  (1) Dump "max magnification" view (scaled lattice) for eyeballing/experiments.
+#  (2) Downscale based on AVERAGE density, then adjust DOWNWARD (i.e. reduce k => wider output)
+#      until the scaling can be applied WITHOUT DISCARDING any characters (no collisions).
+#
+# Input: TSV with text + geometry.
+#  - Must contain a text column (text/chr/char/token/value/glyph).
+#  - And either (x,y,w,h) OR (x1,y1,x2,y2).
+#
+# Output:
+#  - Header lines with computed parameters
+#  - MAX MAGNIFICATION dump (ASCII)
+#  - COLLISION-FREE downscaled grid (ASCII)
+#
+# Notes:
+#  - If collisions remain even at k=1 (true identical/rounded coords), we DO NOT discard.
+#    Instead we keep k=1 and "spill right" within the row to preserve every glyph.
+
+#    sub usage {
+#      die <<"USAGE";
+#    Usage:
+#      $0 input.tsv > out.txt
+#    
+#    Optional env vars:
+#      OCR_GRID_TEXT_COL   OCR_GRID_X_COL OCR_GRID_Y_COL OCR_GRID_W_COL OCR_GRID_H_COL
+#      OCR_GRID_X1_COL OCR_GRID_Y1_COL OCR_GRID_X2_COL OCR_GRID_Y2_COL
+#    
+#      OCR_GRID_FILL=' '            fill char (default space)
+#      OCR_GRID_PAD=1               padding cells around grids (default 1)
+#    
+#      OCR_MAG_MAX_DIM=8000         safety cap for max-magnification (default 8000)
+#      OCR_GRID_MAX_COLS=2000       safety cap for downscaled cols (default 2000)
+#      OCR_GRID_MAX_ROWS=2000       safety cap for downscaled rows (default 2000)
+#    
+#      OCR_GRID_SPILL=right|mark    when k==1 still collides: spill right (default right) or mark with '#'
+#    USAGE
+#    }
+
+#    my $i_text = pick_col('OCR_GRID_TEXT_COL', qw(text chr char token value glyph));
+#    my $i_x    = pick_col('OCR_GRID_X_COL',    qw(x cx x_center xcenter));
+#    my $i_y    = pick_col('OCR_GRID_Y_COL',    qw(y cy y_center ycenter));
+#    my $i_w    = pick_col('OCR_GRID_W_COL',    qw(w width));
+#    my $i_h    = pick_col('OCR_GRID_H_COL',    qw(h height));
+#    
+#    my $i_x1   = pick_col('OCR_GRID_X1_COL',   qw(x1 left l));
+#    my $i_y1   = pick_col('OCR_GRID_Y1_COL',   qw(y1 top  t));
+#    my $i_x2   = pick_col('OCR_GRID_X2_COL',   qw(x2 right r));
+#    my $i_y2   = pick_col('OCR_GRID_Y2_COL',   qw(y2 bottom b));
+
+#    die "Need a text column (e.g. text/chr/char/token)\n" unless defined $i_text;
+

@@ -2,7 +2,6 @@ package TsvUtil;
 use common::sense;
 use Nobody::Util;
 use List::Util;
-use Tsv;
 use Carp qw(croak confess cluck carp);
 use File::stat qw(:FIELDS);
 use Nobody::PP;
@@ -20,6 +19,7 @@ pdf_to_png
 png_to_tsv
 tsv_to_one
 older
+trig
   );
 };
 my(%verbose);

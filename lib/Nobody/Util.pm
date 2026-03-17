@@ -2,48 +2,49 @@
 # vim: ts=2 sw=2 ft=perl
 #
 package Nobody::Util;
+use common::sense;
+use Nobody::Util::Import;
+our(@EXPORT,@ISA);
 local($_);
-use Nobody::PP;
-our($DEBUG)=0;
-
+use Carp qw(carp confess cluck croak);
+use File::stat qw( :FIELDS );
 use strict;
 use warnings;
 no warnings 'experimental::builtin';
-use common::sense;
-use Path::Tiny;
-use Scalar::Util;
-sub open_fds(;$);
-BEGIN {
-  sub open_fds(;$) {
-    my ($dn) = "/proc/self/fd/";
-    if(@_ && $_[0]) {
-      map { $_, readlink "$dn$_" } open_fds();
-    } else {
-      opendir(my $dir,$dn);
-      my $no = fileno($dir);
-      grep { $_ ne '.' && $_ ne '..' && ($no-$_) } readdir($dir);
-    }
+use Nobody::PP;
+sub child_wait; sub class($); sub deparse; sub file_id; sub flatten(@);
+sub getcwd; sub getfds(); sub getfl(*); sub lsort; sub maybeRef($);
+sub methods; sub methods_via; sub nonblock; sub open_fds(;$); sub pasteLines(@);
+sub print_methods; sub safe_blessed; sub safe_can; sub safe_isa; sub serdate(;$);
+sub serial_maker(%); sub setfl(*$); sub uri; sub vcmp; sub vsort;
+
+sub pad {
+  local(@_)=@_;
+  my($max)=List::Util::max(map { length } @_);
+  for(@_) {
+    $_=join("",$_,'.'x($max-length));
   };
-  sub getcwd {
+  @_;
+};
+sub open_fds(;$) {
+  my ($dn) = "/proc/self/fd/";
+  if(@_ && $_[0]) {
+    map { $_, readlink "$dn$_" } open_fds();
+  } else {
+    opendir(my $dir,$dn);
+    my $no = fileno($dir);
+    grep { $_ ne '.' && $_ ne '..' && ($no-$_) } readdir($dir);
+  }
+};
+BEGIN {
+  sub getcwd;
+};
+BEGIN {
+  no warnings 'redefine';
+  *getcwd=sub {
     return readlink("/proc/self/cwd");
   };
-};
-sub ref_count {
-  my(%res);
-  for(@_) {
-    my($ref)=defined?ref?ref:"":"undef";
-    $res{$ref}++;
-  };
-  eex(\%res);
-  return \%res;
-};
-sub basename {
-  path(shift)->basename(@_);
-};
-sub nsort {
-  return sort { $a <=> $b } @_;
 }
-use subs qw( F_GETFL F_SETFL O_NONBLOCK );
 sub getfl(*) {
   my($fh)=shift;
   my($val);
@@ -74,15 +75,6 @@ BEGIN {
     return @_;
   };
 };
-{
-  package Path::Tiny;
-  sub inode($) {
-    return [shift->stat]->[1];
-  };
-};
-sub avg {
-  return sum(@_)/@_;
-};
 sub safe_isa {
   my ($self)=shift;
   my ($class)=shift;
@@ -105,30 +97,8 @@ sub child_wait {
   my ($kid);
   do {
     $kid=waitpid(0,0);
-    say STDERR "$kid returned $?" if $kid>1 and $?;
+    warn "$kid returned $?" if $kid>1 and $?;
   } while( $kid>1 );
-};
-sub dump_obj($$){
-  eval "use Data::Dumper";
-  local(@_)=@_;
-  my($path)=shift;
-  my($data)=shift;
-  local($Data::Dumper::Sortkeys)=1;
-  local($Data::Dumper::Terse)=1;
-  local($Data::Dumper::Useqq)=1;
-  my($tmp)=path("$path.tmp")->touchpath->spew(Dumper($data));
-  $tmp->move($path);
-};
-sub QX {
-  local(@_)=@_;
-  my (@cmd)=@_;
-  my ($pid,$kid)=fork;
-  open(my $tmp, "<&STDIN");
-  open(STDIN,"-|",@cmd);
-  local(@_)=<STDIN>;
-  close(STDIN);
-  die "@cmd returned $?" if $?;
-  @_;
 };
 sub file_id {
   die "useless use of file_id in void context" unless defined wantarray;
@@ -137,29 +107,14 @@ sub file_id {
   $_=path($_) unless ref($_);
   return undef unless $_->exists;
   $_->stat;
-  use vars qw($st_dev $st_ino);
   my $file_id=sprintf("%016x:%016x",$st_dev,$st_ino);
   return $file_id;
-};
-{
-  package Null;
-};
-sub flatten(@);
-sub ref_count{
-  my(%ref);
-  for(@_) {
-    my($ref)=ref($_);
-    $ref="<blank>" if defined and !length;
-    $ref="<undef>" unless defined;
-    $ref{$ref}++;
-  };
-  pp(\%ref);
 };
 sub flatten(@){
   return map { flatten($_) } @_ unless @_==1;
   local($_)=shift;
-  return flatten(@$_) if ref($_) eq 'ARRAY';
-  return flatten(%$_) if ref($_) eq 'HASH';
+  return flatten(@$_) if reftype($_) eq 'ARRAY';
+  return flatten(%$_) if reftype($_) eq 'HASH';
   return $_;
 }
 #    sub recall {
@@ -201,8 +156,6 @@ sub uri {
   die "$@" if "$@";
   return URI->new($_);
 };
-use subs qw(carp confess);
-use subs qw(eex);
 sub maybeRef($) {
   carp "use class, not maybeRef";
   goto \&class;
@@ -228,38 +181,11 @@ sub vcmp {
 sub vsort {
   return sort { vcmp } @_;
 };
-sub hdump {
-  my(%k)=%{$_[0]};
-  my(%x);
-  for(keys(%k)){
-    my($v)="$k{$_}";
-    $x{$v}{v}//=pp($k{$_});
-    push(@{$x{$v}{k}},$_);
-  };
-  for(keys %x) {
-    $x{pp(delete $x{$_}{k})}=delete $x{$_}{v};
-    delete $x{$_};
-  };
-  my($pad)=max(map { length } keys %x);
-  @_=();
-  for(keys %x) {
-    my($v)=$x{$_};
-    my($k)="$_";
-    s{[",]}{}g;
-    s{\[}{qw( };
-    s{]}{ )};
-    my($pad)=(" "x($pad-length));
-    push(@_,join("\n  ",join(" ",$_,$pad,"=>",$x{$k})));
-  };
-  join("", "{\n", map({ "  $_,\n" } @_), "}");
-};
 sub lsort {
-  (
-    map { $_->[1] }
-    sort { $a->[0] <=> $b->[0] or $a->[1] cmp $b->[1] }
-    map { [ length($_), $_ ] }
-    @_
-  );
+  my (@s,@l) = splice(@_);
+  for(0 .. -1+@s) {
+    push(@l,length);
+  };
 };
 my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst);
 my @x=qw(sec min hour mday mon year wday yday isdst);
@@ -301,7 +227,7 @@ sub serial_maker(%) {
           confess "mkdir:$res{fn}:$!";
         };
       } else {
-        if(sysopen($res{fh},$res{fn},O_CREAT()|O_EXCL())){
+        if(sysopen($res{fh},$res{fn},Fcntl::O_CREAT|Fcntl::O_EXCL())){
           eex(\%res);
           return \%res 
         } elsif ( $!{EEXIST} ) {
@@ -410,4 +336,5 @@ ugly hacks, but saves him time.
 
 =cut
 use Nobody::Util::Import;
+use Nobody::Util::Path;
 1;

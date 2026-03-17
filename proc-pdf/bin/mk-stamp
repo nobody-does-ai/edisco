@@ -1,7 +1,0 @@
-#!/bin/bash
-
-# makes a nice big red gamp file
-
-mkdir -p $HOME/doc
-echo "Copy" | enscript -B -f Helvetica-Bold@100 --color=1:0:0 -o - | ps2pdf - $HOME/doc/stamp.pdf
-echo "stamp in $HOME/doc/stamp.pdf"
