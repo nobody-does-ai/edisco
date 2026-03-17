@@ -1,6 +1,7 @@
 package TsvUtil;
 use common::sense;
 use Nobody::Util;
+use Scalar::Util qw(blessed);
 our(@EXPORT);
 BEGIN {
   @EXPORT= qw(
@@ -9,7 +10,86 @@ BEGIN {
   png_to_tsv pdf_page_count
   tsv_to_tsv
   paths trace
+  vert_hash_cmp vert_cmp vert_sort group_find
   );
+};
+sub group_text {
+  return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
+};
+# Salvaged from the older ../lib/TsvUtil.pm line. It depends on helpers and
+# column metadata that do not exist in this local branch yet, so keep it out of
+# the active code path until we decide to restore the round-trip TSV writer.
+#
+# sub tsv_format { ... }
+# sub tsv_combine { ... }
+# sub vert_sort { ... }
+# sub group_find { ... }
+sub _rect {
+  my($obj)=@_;
+  return $obj->rect if blessed($obj) && $obj->can('rect');
+  return $obj;
+}
+sub _field {
+  my($obj,@names)=@_;
+  for my $name (@names) {
+    if(blessed($obj) && $obj->can($name)) {
+      return $obj->$name();
+    }
+    if(ref($obj) eq 'HASH' && exists $obj->{$name}) {
+      return $obj->{$name};
+    }
+  }
+  return undef;
+}
+sub _geom {
+  my($obj,$axis)=@_;
+  my $rect=_rect($obj);
+  if($axis eq 'page') {
+    my $page=_field($obj, qw(page page_num));
+    return defined($page) ? $page : 0;
+  }
+  if($axis eq 'top') {
+    my $v=_field($rect, qw(top y1 t));
+    return defined($v) ? $v : 0;
+  }
+  if($axis eq 'bottom') {
+    my $v=_field($rect, qw(bottom y2 b));
+    return defined($v) ? $v : _geom($obj,'top');
+  }
+  if($axis eq 'left') {
+    my $v=_field($rect, qw(left x1 l));
+    return defined($v) ? $v : 0;
+  }
+  die "bad axis: $axis";
+}
+sub vert_hash_cmp {
+  return (
+    _geom($a,'page') <=> _geom($b,'page')
+      or
+    _geom($a,'top') <=> _geom($b,'top')
+      or
+    _geom($a,'left') <=> _geom($b,'left')
+  );
+};
+sub vert_cmp {
+  return vert_hash_cmp();
+};
+sub vert_sort {
+  return sort { vert_hash_cmp } @_;
+};
+sub group_find {
+  local(@_)=@_;
+  return unless @_;
+  @_ = vert_sort(@_);
+  my(@group)=shift;
+  my($bot)=_geom($group[0],'bottom');
+  while(@_ && _geom($_[0],'top') <= $bot) {
+    my($word)=shift;
+    push(@group,$word);
+    my($wbot)=_geom($word,'bottom');
+    $bot=$wbot if $bot < $wbot;
+  }
+  return sort { _geom($a,'left') <=> _geom($b,'left') } @group;
 };
 sub tsv_to_tsv {
   trace(@_);
@@ -166,29 +246,6 @@ sub pdf_to_pgs {
   };
   return @_;
 }
-sub next_set {
-  my(@word)=@_;
-  my($top)=$word[0]->top;
-  my($bot)=$word[0]->bottom;
-  eex( { top=>$top, bot=>$bot } );
-  while($word[0]->top<$bot){
-    $bot=max($bot,shift(@word)->bottom);
-  };
-};
-sub tsv_partition {
-  trace(@_);
-  my(@word)=@_;
-  return () unless @word;
-  my(@part);
-  @word=sort {
-    $a->top <=> $b->top
-      or
-    $a->bottom <=> $b->bottom
-      or
-    refaddr($a) <=> refaddr($b)
-  } @word;
-  my(@set)=next_set(@word);;
-};
 sub run {
   if(my $pid=fork) {
     my($key);

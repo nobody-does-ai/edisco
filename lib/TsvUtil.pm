@@ -26,9 +26,6 @@ my(%verbose);
 BEGIN {
   $verbose{skips}=1;
 };
-sub group_text {
-  return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
-};
 our(@cols);
 BEGIN { 
   *cols=\@TsvWord::cols;
@@ -66,23 +63,6 @@ sub gather {
   };
   return %res if wantarray;
   return \%res;
-};
-sub tsv_format {
-  local(@_)=@_;
-  die "no cols" unless @cols>10;
-  unshift(@_,join("\t",@cols));
-  while(grep { ref } @_) {
-    for(my $i=0;$i<@_;$i++) {
-      if(ref($_[$i]) eq 'ARRAY') {
-        splice(@_,$i,1,@{$_[$i]});
-      } elsif(ref($_[$i])) {
-        my($hash)=$_[$i];
-        $_=join("\t", map { $hash->{$_} } @cols);
-        $_[$i]=$_;
-      };
-    };
-  };
-  join("\n",@_,"");
 };
 sub get_page_count {
   my ($pdf) = @_;
@@ -202,25 +182,6 @@ sub pdf_to_pgs {
   };
   return @_;
 }
-sub tsv_combine {
-  local(@_)=@_;
-  my(%off)=%{+shift};
-  my(%max);
-  if(@_) {
-    %max=map { $_, 0 } qw( block_num page_num );
-  };
-  for my $word(@_) {
-    $word->{top}+=$off{top};
-    $word->{page_num}+=$off{page_num};
-    $word->{block_num}+=$off{block_num};
-    for(keys %max){
-      $max{$_}=max($max{$_},$word->{$_}) if exists $word->{$_};
-    };
-  };
-  $max{top}=$off{top}+$_[0]->{height};
-  %off=%max;
-  \%off;
-};
 sub vert_hash_cmp {
   return (
     $a->{page} <=> $b->{page}
@@ -238,30 +199,6 @@ sub vert_cmp {
       or
     $a->left <=> $b->left
   );
-};
-sub vert_sort {
-  if(@_ == grep { U::blessed($_) } @_) {
-    return sort { vert_cmp } @_;
-  } elsif (@_==grep { !U::blessed($_) } @_) {
-    return sort { vert_hash_cmp } @_;
-  } else {
-    die "mixed blessed and unblessed";
-  };
-};
-sub group_find {
-  local(@_)=@_;
-  local(*_)=shift;
-  return unless @_;
-  @_ = vert_sort @_;
-  my($i)=0;
-  my(@word)=shift;
-  my($bot)=$word[0]->y2;
-  while(@_ and $_[0]->cy<$bot) {
-    my($word)=shift;
-    push(@word,$word);
-    $bot=$word->y2 if $bot<$word->y2;
-  }
-  sort { $a->x1 <=> $b->x1 } @word;
 };
 my(%pid);
 sub run {

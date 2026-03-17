@@ -5,7 +5,7 @@ eval 'exec perl -x -wS $0 ${1+"$@"}'
 $|++;
 use common::sense;
 use autodie;
-use ProcPdf::Util;
+use Nobody::Util;
 use Nobody::Util;
 use Nobody::PP;
 our(@VERSION) = qw( 0 1 0 );
