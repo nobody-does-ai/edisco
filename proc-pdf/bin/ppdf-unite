@@ -1,0 +1,131 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+our(@VERSION) = qw( 0 1 0 );
+
+# ppdf-unite: Merge multiple PDFs into one
+# Part of proc-pdf toolkit
+
+sub usage {
+    die <<'USAGE';
+Usage: ppdf-unite -o <output.pdf> <input1.pdf> [input2.pdf ...]
+       ppdf-unite -o <output.pdf> -i <file-list.txt>
+       ppdf-unite -o <output.pdf>  # reads filenames from stdin
+
+Merge multiple PDF files into a single PDF.
+
+Options:
+  -o <file>       Output PDF filename (required)
+  -i <file>       Read input filenames from file (one per line)
+                  If omitted and no files given, reads from stdin
+
+Arguments:
+  input.pdf ...   PDF files to merge (in order)
+
+Output:
+  Prints output filename to stdout
+  Diagnostics and progress to stderr
+
+Examples:
+  # Merge specific files
+  ppdf-unite -o combined.pdf file1.pdf file2.pdf file3.pdf
+
+  # Merge from file list
+  ppdf-unite -o combined.pdf -i files.txt
+
+  # Merge from stdin
+  ls *.pdf | ppdf-unite -o combined.pdf
+
+  # Merge from command output
+  ppdf-split -o page-%03d.pdf doc.pdf | ppdf-unite -o reassembled.pdf
+
+Part of proc-pdf toolkit (ppdf-* commands)
+USAGE
+}
+
+sub main (@) {
+    my ($output_file, $input_list_file, @input_files);
+    
+    # Parse arguments
+    while (@_) {
+        my $arg = shift;
+        if ($arg eq '-o') {
+            $output_file = shift or usage();
+        } elsif ($arg eq '-i') {
+            $input_list_file = shift or usage();
+        } elsif ($arg eq '-h' || $arg eq '--help') {
+            usage();
+        } else {
+            push @input_files, $arg;
+        }
+    }
+    
+    usage() unless defined $output_file;
+    
+    # Gather input files
+    if (defined $input_list_file) {
+        # Read from file
+        my @lines = path($input_list_file)->lines({chomp => 1});
+        push @input_files, grep { /\S/ } @lines;
+    } elsif (!@input_files) {
+        # Read from stdin
+        while (my $line = <STDIN>) {
+            chomp $line;
+            push @input_files, $line if $line =~ /\S/;
+        }
+    }
+    
+    die "Error: No input files specified\n" unless @input_files;
+    
+    # Validate inputs
+    for my $file (@input_files) {
+        unless (-f $file) {
+            die "Error: Input file not found: $file\n";
+        }
+    }
+    
+    # Check output doesn't exist
+    if (-e $output_file) {
+        die "Error: Output file already exists: $output_file\n";
+    }
+    
+    say STDERR "Merging ", scalar(@input_files), " PDF files...";
+    
+    # Run pdfunite
+    my @cmd = (
+        'pdfunite',
+        @input_files,
+        $output_file,
+    );
+    
+    system(@cmd) == 0 or die "Error: pdfunite failed: $?\n";
+    
+    # Verify output
+    my $page_count = get_page_count($output_file);
+    if (defined $page_count) {
+        say STDERR "Done! Created $output_file ($page_count pages)";
+    } else {
+        say STDERR "Done! Created $output_file";
+    }
+    
+    # Output filename to stdout
+    say $output_file;
+}
+
+sub get_page_count {
+    my ($pdf) = @_;
+    
+    my @cmd = ('pdfinfo', $pdf);
+    my $info = qx/@cmd 2>&1/;
+    return undef if $? != 0;
+    
+    my ($pages_line) = $info =~ /^Pages:\s+(\d+)/mi;
+    return $pages_line ? int($pages_line) : undef;
+}
+
+main(@ARGV);

@@ -1,0 +1,32 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Nobody::JSON;
+our(@VERSION) = qw( 0 1 0 );
+my($inv)=path("inv/invest.json")->slurp;
+$inv=decode_json($inv)->[1];
+my(@inv);
+sub trans {
+  if(s{^([0-9][0-9])/([0-9][0-9])/([0-9][0-9][0-9][0-9])}{$3-$1-$2}) {
+    my(@word)=split;
+    my($date)=shift@word;
+    my($amt)=pop@word;
+    next unless @word;
+    printf("%10s | %-130s | %10s\n",$date,"@word",$amt);
+  };
+};
+for my $key(sort keys %$inv){
+  my(@lines)=@{$inv->{$key}->{group}};
+  @lines=map { @$_ } @lines;
+  for(@lines) {
+    $_=$_->{text};
+
+  };
+};
+say for @inv;

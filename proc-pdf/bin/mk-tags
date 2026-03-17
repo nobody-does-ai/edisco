@@ -1,7 +1,5 @@
-#!/bin/bash
-set -x
 ctags --recurse \
   --languages=Perl \
   --perl-kinds=+cfp \
   --fields=+nksSaf \
-  bin lib tmp/lib
+  bin lib 

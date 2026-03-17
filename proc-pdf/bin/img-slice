@@ -1,0 +1,45 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Path::Tiny;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+# Header installed by /opt/bin/mkperl
+use GD;
+
+# Extract a horizontal slice from a loaded image
+sub extract_slice {
+    my ($img, $start_y, $height) = @_;
+    my ($w, $full_h) = $img->getBounds;
+    
+    # Bounds check
+    $height = $full_h-$start_y if $start_y + $height > $full_h;
+    
+    my $slice = GD::Image->new($w, $height, 1);  # truecolor for quality
+    
+    # Copy the band (full width, from start_y to start_y+height)
+    $slice->copy($img, 0, 0, 0, $start_y, $w, $height);
+    
+    return $slice;
+}
+ use common::sense;
+ use GD::Image;
+ say GD::Image->newFromPng("png/2023-Q4.png",1);
+ 
+sub main {
+  my($num)=0;
+  for my $page(glob("png/*.png")) {
+    my $source = GD::Image->newFromPng($page,1) or die "Can't load";
+    my $slice = extract_slice($source, 500, 100);  # rows 500-599 (0-based)
+
+    # Save slice if needed, or keep in mem for appending
+    open my $out, '>:raw', 'slice.png' or die $!;
+    print $out $slice->png;
+    close $out;
+  }
+}

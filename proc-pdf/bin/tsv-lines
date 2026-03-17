@@ -1,0 +1,181 @@
+#!/opt/bin/vi-perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Carp qw( croak confess carp cluck );
+use Nobody::PP;
+use JSON::XS;
+use Tie::StdHandle;
+
+my($coder) = JSON::XS->new->ascii->pretty->allow_nonref->allow_blessed ->convert_blessed;
+use feature qw(signatures);
+my(@head);
+BEGIN {
+  @head=qw(
+  level	page	block	par	line	
+  word	left	top	width	height	conf	text
+  );
+};
+our(@VERSION) = qw( 0 1 0 );
+sub all_lines;
+our(@ref);
+use Tie::Poison;
+use vars qw{
+%file @file $file
+%word @word $word
+%line @line $line
+};
+our(%file,@file);
+our(%word,@word);
+our(%line,@line);
+require "$ENV{PWD}/lib/render.pl";
+our($no);
+{
+  package Rect;
+}
+my $mk_acc;
+BEGIN {
+  $mk_acc=sub {
+    my($name)=shift;
+    my($sub)=sub {
+      my($self)=shift;
+      $self->{$name}=shift if @_;
+      $self->{$name};
+    };
+    return $sub;
+  };
+};
+{
+  package Word;
+  our(@ISA)=qw(Rect);
+  use Nobody::Util qw( ddx class );
+  BEGIN {
+    use subs @head;
+  };
+  our($bottom,$top);
+  my(@level);
+  BEGIN {
+    @level=( "",qw(page block par line word) );
+
+    no strict 'refs';
+    for my $attr (@head, qw(bottom right)) {
+      *{__PACKAGE__ . "::$attr"} = $mk_acc->($attr);
+    }
+  }
+  our(@line);
+  use Nobody::Util;
+  sub new {
+    my($class)=class(shift);
+    local(%word);
+    my($self)=\%word;
+    state($no);
+    $word{no}=++$no;
+    @_=%{$_[0]} if @_==1;
+    %word=@_;
+    $word{level}=$level[$word{level}];
+    $word{bottom}=$word{top}+delete $word{height};
+    $word{right}=$word{left}+delete $word{width};
+    return undef unless defined($word{text}) or ($word{conf}==-1);
+    bless($self,$class);
+    eex($self);
+    $self;
+  }
+  sub height {
+    my($self)=shift;
+    my($R,$L)=\($self->{bottom},$self->{top});
+    if(@_){
+      my($W,$X)=map{$_/2} (shift,$$L+$$R);
+      ($$R,$$L)=($X+$W,$X-$W);
+    };
+    $$R-$$L;
+  };
+  sub width {
+    my($self)=shift;
+    my($R,$L)=\($self->{right},$self->{left});
+    if(@_){
+      my($W,$X)=map{$_/2} (shift,$$L+$$R);
+      ($$R,$$L)=($X+$W,$X-$W);
+    };
+    $$R-$$L;
+  };
+  sub selfpp {
+    my($self)=shift;
+    my(%self)=%$self;
+    for(qw(width height)){
+      $self{$_}=$self->$_();
+    };
+    $self{rect} = join(" ",'[',join(", ",map { sprintf("%6d",delete $self{$_}) } qw(top left width height )),']');
+    if($self{level}ne'word'){
+      $self{id}=join(" ", map { delete $self{$_} } qw( page block par line word ));
+      delete $self{$_} for qw( text conf top left word );
+    } else {
+      delete $self{$_} for qw( block par line word page top left );
+    };
+    my($type)=sprintf "%-5s", delete $self{level};
+    return join("",$type,"(",join(", ", $self{rect}, map { join("=> ",$_, $self{$_}) } grep { defined($self{$_}) } ('id',@head)),")");
+  };
+  sub TO_JSON {
+    return {%{$_[0]}};
+  };
+}
+our(@lines);
+our(%file);
+sub group_words;
+sub hash(@){
+  return map { $_, shift } @head;
+};
+sub handle_file {
+  my($file)=path(shift);
+  confess "too many" if @_;
+  my($words)=$file{$_}{word}=[];
+  for( map { { hash(split) } } grep { /^\d/ } $file->lines ) {
+    my($word)=Word->new($_);
+    push(@$words,$word);
+  };
+  exit(0);
+#      @_=grep{defined}@_;
+#      @_=sort { $a->page_num <=> $b->page_num or $a->top <=> $b->top } @_;
+#      eex( \@_ );
+#      @_;
+}
+sub group_words {
+  return unless @_;
+  my($bottom)=$_[0]->bottom;
+  my(@gs);
+  while(@_) {
+    my(@group);
+    eex($_[0]->page_num, $_[0]->text);
+    $bottom=$_[0]->bottom;
+    while(@_ and $bottom>=$_[0]->top){
+      $bottom=max($bottom,$_[0]->bottom );
+      push(@group,shift(@_));
+    };
+    @group = sort { $a->left <=> $b->left } @group;
+    eex(length(join(" ",map { $_->text } @group)));
+    push(@gs,[@group]);
+  }
+  return @gs;
+};
+sub main {
+  local(@file);
+  my($fileno);
+  local(@lines);
+  @file=splice(@_);
+  @file=sort glob("tsv/*.tsv");
+  for(0..-1+@file){
+    $file{$file[$_]}{num}=$_;
+  };
+  my($file,$line,$word);
+  my($top,$bottom);
+  for $file(@file) {
+    @{$file{$_}{group}}=handle_file($file);
+  };
+#      say $coder->encode(\%file);
+  path("inv/invest.json")->touchpath->spew($coder->encode(\%file));
+}
+@ARGV=sort glob("tsv/*.tsv");
+main(@ARGV);
