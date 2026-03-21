@@ -1,5 +1,4 @@
 package TsvGroup;
-BEGIN { open(STDOUT,">&STDERR"); };
 use common::sense;
 use lib 'lib';
 use Tsv;

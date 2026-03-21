@@ -1,5 +1,4 @@
 package Tsv;
-BEGIN { open(STDOUT,">&STDERR"); };
 use Nobody::Util;
 use Nobody::Util qw(sum);
 use common::sense;

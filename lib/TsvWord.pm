@@ -1,5 +1,4 @@
 #!/usr/bin/perl
-BEGIN { open(STDOUT,">&STDERR"); };
 # vim: ts=2 sw=2 ft=perl
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;

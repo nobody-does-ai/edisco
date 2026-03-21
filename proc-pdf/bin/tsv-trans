@@ -3,18 +3,16 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
   if 0;
 $|++;
-use lib "lib";
 use common::sense;
 use autodie;
 use Nobody::Util;
 use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
 use TsvUtil qw(group_find vert_sort words_merge);
 use TsvFile;
 use TsvDoc;
-our(@VERSION) = qw( 0 1 0 );
 
 sub main;
-open(STDOUT,">&=1") or die "reopen stdout: $!";
 main(@ARGV);
 exit(0);
 sub main {
@@ -40,7 +38,7 @@ sub main {
       say sprintf("  %s  %d rows",$page->path,scalar(@rows));
       for my $row(@rows){
         my($text)=join(" ",map{$_->text}words_merge(@$row));
-        say sprintf("    %s",$text);
+        say $page, " ", sprintf("    %s",$text);
       };
     };
   };

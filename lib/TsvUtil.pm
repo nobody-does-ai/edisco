@@ -12,7 +12,7 @@ BEGIN {
   png_to_tsv pdf_page_count
   tsv_to_tsv
   paths trace
-  vert_hash_cmp vert_cmp vert_sort group_find
+  vert_hash_cmp vert_cmp vert_sort group_find words_merge
   );
 };
 sub group_text {
@@ -93,6 +93,30 @@ sub group_find {
     $bot=$wbot if $bot < $wbot;
   }
   return sort { _geom($a,'left') <=> _geom($b,'left') } @group;
+};
+sub words_merge {
+  local(@_)=@_;
+  my(@chars)=grep{length($_->text//'')}@_;
+  return @_ unless @chars;
+  my($char_w)=(sum(map{_rect($_)->dx}@chars)/sum(map{length($_->text)}@chars));
+  my(@out)=(shift);
+  for my $w (@_){
+    my($gap)=_geom($w,'left')-_rect($out[-1])->x2;
+    if($gap <= $char_w){
+      my($a)=$out[-1];
+      my($merged)=TsvWord->new({
+        text  => ($a->text//'').' '.($w->text//''),
+        left  => _rect($a)->x1,
+        top   => _geom($a,'top'),
+        width => _rect($w)->x2 - _rect($a)->x1,
+        height=> _rect($a)->dy,
+      });
+      $out[-1]=$merged;
+    } else {
+      push(@out,$w);
+    };
+  };
+  return @out;
 };
 sub tsv_to_tsv {
   trace(@_);
@@ -194,7 +218,7 @@ sub pdf_to_png {
   } else {
     $of->parent->mkdir;
     open(STDOUT,">",$of->stringify);
-    exec(qw(pdftoppm -png -singlefile), $if);
+    exec(qw(pdftoppm -png -singlefile -r 300), $if);
     die "exec:pdftoppm:$!";
   };
   return path($of);
@@ -212,11 +236,14 @@ sub png_to_tsv {
   if ( -e "$of" ) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
-    err("xform $if to $of");
+    my $oem=1;
+    my $oem_name=(qw(legacy lstm legacy+lstm default))[$oem];
+    err("xform $if to $of (tesseract oem=$oem $oem_name)");
     open(my $tmp,">&STDOUT");
     open(STDOUT,">",$of);
     my @tcmd = (
       'tesseract',
+      '--oem', $oem,
       '-l', 'eng',
       '$if',
       "-",
