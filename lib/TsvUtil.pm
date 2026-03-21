@@ -1,58 +1,119 @@
 package TsvUtil;
 use common::sense;
+use lib "lib";
 use Nobody::Util;
-use List::Util;
-use Carp qw(croak confess cluck carp);
-use File::stat qw(:FIELDS);
-use Nobody::PP;
-use autodie;
-our(@EXPORT,@EXPORT_OK);
+use Tsv;
+use Scalar::Util qw(blessed);
+our(@EXPORT);
 BEGIN {
-  @EXPORT=qw( vert_sort vert_hash_cmp );
-  @EXPORT_OK= qw(
-fname_parse
-group_find
-group_text
-get_page_count
-pdf_to_pgs
-pdf_to_png
-png_to_tsv
-tsv_to_one
-older
-trig
+  @EXPORT= qw(
+  tsv_parse tsv_partition
+  pdf_to_png pdf_to_pgs
+  png_to_tsv pdf_page_count
+  tsv_to_tsv
+  paths trace
+  vert_hash_cmp vert_cmp vert_sort group_find
   );
 };
-my(%verbose);
-BEGIN {
-  $verbose{skips}=1;
+sub group_text {
+  return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
 };
-our(@cols);
-BEGIN { 
-  *cols=\@TsvWord::cols;
+# Salvaged from the older ../lib/TsvUtil.pm line. It depends on helpers and
+# column metadata that do not exist in this local branch yet, so keep it out of
+# the active code path until we decide to restore the round-trip TSV writer.
+#
+# sub tsv_format { ... }
+# sub tsv_combine { ... }
+# sub vert_sort { ... }
+# sub group_find { ... }
+sub _rect {
+  my($obj)=@_;
+  return $obj->rect if blessed($obj) && $obj->can('rect');
+  return $obj;
+}
+sub _field {
+  my($obj,@names)=@_;
+  for my $name (@names) {
+    if(blessed($obj) && $obj->can($name)) {
+      return $obj->$name();
+    }
+    if(ref($obj) eq 'HASH' && exists $obj->{$name}) {
+      return $obj->{$name};
+    }
+  }
+  return undef;
+}
+sub _geom {
+  my($obj,$axis)=@_;
+  my $rect=_rect($obj);
+  if($axis eq 'page') {
+    my $page=_field($obj, qw(page page_num));
+    return defined($page) ? $page : 0;
+  }
+  if($axis eq 'top') {
+    my $v=_field($rect, qw(top y1 t));
+    return defined($v) ? $v : 0;
+  }
+  if($axis eq 'bottom') {
+    my $v=_field($rect, qw(bottom y2 b));
+    return defined($v) ? $v : _geom($obj,'top');
+  }
+  if($axis eq 'left') {
+    my $v=_field($rect, qw(left x1 l));
+    return defined($v) ? $v : 0;
+  }
+  die "bad axis: $axis";
+}
+sub vert_hash_cmp {
+  return (
+    _geom($a,'page') <=> _geom($b,'page')
+      or
+    _geom($a,'top') <=> _geom($b,'top')
+      or
+    _geom($a,'left') <=> _geom($b,'left')
+  );
+};
+sub vert_cmp {
+  return vert_hash_cmp();
+};
+sub vert_sort {
+  return sort { vert_hash_cmp } @_;
+};
+sub group_find {
+  local(@_)=@_;
+  return unless @_;
+  @_ = vert_sort(@_);
+  my(@group)=shift;
+  return @group if ($group[0]->text//'') eq 'POLLOCK';
+  my($bot)=_geom($group[0],'bottom');
+  while(@_ && _geom($_[0],'top') <= $bot) {
+    my($word)=shift;
+    push(@group,$word);
+    my($wbot)=_geom($word,'bottom');
+    $bot=$wbot if $bot < $wbot;
+  }
+  return sort { _geom($a,'left') <=> _geom($b,'left') } @group;
+};
+sub tsv_to_tsv {
+  trace(@_);
+  my($out,@list)=@_;
 };
 use Exporter qw(import);
-sub older {
-  local(@_)=@_;
-  my ($if,$of)=(shift,shift);
-  $if=path($if);
-  $of=path($of);
-  return 0 unless -e $of;
-  return 0 unless -e $if;
-  $if->stat;
-  my ($itime)=min($st_atime,$st_mtime,$st_ctime);
-  $of->stat;
-  my ($otime)=min($st_atime,$st_mtime,$st_ctime);
-  if($itime<=$otime) {
-#        say "$if ot $of";
-    return 1;
-  } else {
-    say "$if nt $of";
-    return 0;
-  };
-};
 sub err {
   say STDERR "@_";
 };
+sub paths {
+  -e or die "$_ does not exist" for @_;
+  @_ = map { safe_isa($_,'Path::Tiny') ? $_ : path($_) } @_;
+  my($max)=max(map { length } @_);
+  say scalar(@_), " paths ($max)";
+  for(@_) {
+    say " => ", $_;
+  };
+  @_;
+};
+sub ddx { goto \&eex };
+my(%verbose)={ skip=>0, trace=>1 };
 sub gather {
   local(@_)=@_;
   my(%res);
@@ -64,7 +125,44 @@ sub gather {
   return %res if wantarray;
   return \%res;
 };
-sub get_page_count {
+sub trace {
+  my(@caller)=caller(0);
+  @caller[3]=[caller(1)]->[3];
+  my($pkg)=__PACKAGE__;
+  for(@caller[3]){
+    s{^${pkg}::}{};
+  };
+  my($msg);
+  if($verbose{trace}==2){
+    ($msg)=join(":",@caller[1,2,3],"@_");
+  } elsif($verbose{trace}==1) {
+    ($msg)=join(":",@caller[3],"@_");
+  } else {
+    ($msg)=$caller[3];
+  };
+  say STDERR $msg;
+};
+sub tsv_parse {
+  my $path=shift;
+  my(@rows)=$path->lines ;
+  my(@cols)=map { split } shift(@rows);
+  my(@word);
+  for(@rows) {
+    my(@vals)=split;
+    my(@pair);
+    die ppx(
+      \@vals, \@cols
+    ) if @cols<@vals;
+    for(my $i=0;$i<@cols;$i++) {
+      push(@pair,$cols[$i],@vals[$i])
+    };
+    push(@word,{ @pair });
+  };
+  @word=TsvWord->from(@word);
+  \@word;
+};
+sub pdf_page_count {
+  trace(@_);
   my ($pdf) = @_;
   my @cmd = ('pdfinfo', $pdf);
   my $info = qx/@cmd 2>&1/;
@@ -73,164 +171,108 @@ sub get_page_count {
   die "Error: Could not determine page count for $_" unless $pages_line;
   return $pages_line;
 }
-sub tsv_to_one {
-  local(@_)=@_;
-  my($otsv,@itsv)=splice@_;
-  my(@tsv);
-  my(%max)=qw( block_num 0 page_num 0 top 0 );
-  my(%off)=%max;
-  my($time)=time;
-  my(%older);
-  for(@itsv) {
-    if(older($_,$otsv)) {
-      eex "$_ ot $otsv";
-    } else {
-      $older{$_}=0;
-      eex "$_ nt $otsv";
-    };
-  };
-  return $otsv unless keys %older;
-  for(@itsv) {
-    say STDERR "$_ => $otsv";
-    local(@_)=$_->lines;
-    @_=TsvWord->parse_lines(@_);
-    for my $tsv(@_) {
-      for my $key(keys %max) {
-        $tsv->{$key}+=$off{$key};
-        $max{$key}=max($max{$key},$tsv->{$key});
-      };
-    };
-    push(@tsv,[@_]);
-    %off=%max;
-  };
-  @tsv=tsv_format(@tsv);
-  $otsv->touchpath->spew(
-    @tsv
-  );
-};
+sub get_page_count {
+  trace(@_);
+  goto &pdf_page_count;
+}
 sub pdf_to_png {
   die "usage: pdf_to_png(\$png)" unless @_;
   return map { pdf_to_png($_) } @_ unless @_==1;
+  trace(@_);
   my($if)=path($_[0]);
   die "$if does not exist" unless -e $if;
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
-  if(older($if,$of)) {
+  if($of->exists) {
     err("skip  $if to $of") if $verbose{skips};
-  } else {
-    my(@cmd)=qw(pdftoppm -png -r 300 -singlefile $if > $of);
-    run($if,$of,@cmd);
+    return $of;
   };
-  return $of;
+  if(my $pid=fork){
+    while($pid!=waitpid($pid,0)){
+      eex "??? $?";
+    };
+    die "pdftoppm:$?" if $?;
+  } else {
+    $of->parent->mkdir;
+    open(STDOUT,">",$of->stringify);
+    exec(qw(pdftoppm -png -singlefile), $if);
+    die "exec:pdftoppm:$!";
+  };
+  return path($of);
 };
 sub png_to_tsv {
-  err("png_to_tsv(@_)\n");
   die "usage: png_to_tsv(\$png)" unless @_;
   return map { png_to_tsv($_) } @_ unless @_==1;
+  trace(@_);
   my($fmt)="tsv/%s.tsv";
   my($base,$dir);
   my $if=shift;
-  die "$if not defined" unless defined $if;
   die "$if does not exsit" unless $if->exists;
   my ($of)=path(sprintf($fmt,$if->basename(".png")));
   $of->parent->mkdir;
-  if (older($if,$of)) {
+  if ( -e "$of" ) {
     err("skip  $if to $of") if $verbose{skips};
   } else {
+    err("xform $if to $of");
+    open(my $tmp,">&STDOUT");
+    open(STDOUT,">",$of);
     my @tcmd = (
       'tesseract',
+      '-l', 'eng',
       '$if',
       "-",
-      '--dpi', 300,
       'tsv',
-      '>',
-      '$of'
     );
     run($if,$of,@tcmd);
+    die "(@tcmd)" if $?;
   };
   return $of;
 };
-INIT {
-  my(%trig);
-  %trig=(
-    qw(
-    TRANSACTIONS 2
-    INVESTMENTS 2
-    INSURED 1
-    Page 1
-    Program 1
-    )
-  );
-  sub trig {
-    return $trig{$_};
-  };
-};
 sub pdf_to_pgs {
-  die "usage: pdf_to_pgs(\$pdf)" unless @_;
+  trace(@_);
   return map { pdf_to_pgs($_) } @_ unless 1==@_;
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
-  my($pages)=get_page_count($if);
-  for(my $pg=1;$pg<=$pages;$pg++) {
+  my($pages)=pdf_page_count($if);
+  for(my $pg=0;$pg<$pages;$pg++) {
     my($of)=path(sprintf($fmt,$if->basename(".pdf"),$pg));
     push(@_,$of);
-    if(older($if,$of)) {
+    if(-e $of) {
       err("skip  $if to $of") if $verbose{skips};
     } else {
-      my (@cmd)=( qw(qpdf), '$if', qw( --pages .), $pg, '--', '-', '>', '$of');
-      run($if,$of,@cmd);
+      err "xform $if to $of";
+      $of->parent->mkdir;
+      my (@cmd)=( qw(qpdf), $if, qw( --pages .), 1+$pg, '--', $of);
+      system(@cmd);
+      die "(@cmd) failed" if $?;
     };
   };
   return @_;
 }
-sub vert_hash_cmp {
-  return (
-    $a->{page} <=> $b->{page}
-      or
-    $a->{top} <=> $b->{top}
-      or
-    $a->{left} <=> $b->{left}
-  );
-};
-sub vert_cmp {
-  return (
-    $a->page <=> $b->page
-      or
-    $a->top <=> $b->top
-      or
-    $a->left <=> $b->left
-  );
-};
-my(%pid);
 sub run {
-  local(@_)=@_;
-  my($if)=shift;
-  my($ff)=shift;
-  my($of)=path("$ff.tmp");
-  $_->touchpath->remove for $ff,$of;
-  say STDERR "$if => $ff";
-  @_=map { split } @_;
-  for(@_){
-    if($_ eq '$if') {
-      $_=$if;
-    } elsif ($_ eq '$of') {
-      $_=$of;
-    };
-  };
-  err("@_") if $verbose{cmds};
   if(my $pid=fork) {
-    child_wait;
-  } else {
-    system("@_");
-    if($?) {
-      $of->remove;
-      warn "@_\n";
-      exit(1);
+    my($key);
+    while(($key=waitpid(0,0))>1) {
+      say "$key returned $?";
+      return if $key==$pid;      
     };
-    if($of->move($ff)) {
-      exit(0);
-    } else {
-      exit(1);
-    };
+    die "waitpid: $key";
   };
+  my($if)=shift;
+  my($of)=shift;
+  my($tf)=path($of.".tmp");
+  open(STDOUT,">",$tf);
+  local(@_)=@_;
+  eex(\@_);
+  for(@_) {
+    $_=eval $_ if m{^\$};
+  };
+  eex(\@_);
+  system(@_);
+  if($?) {
+    $tf->remove;
+    die "($if,$of,@_)";
+  };
+  $tf->move($of);
+  $of;
 };
 1;

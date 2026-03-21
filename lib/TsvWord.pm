@@ -19,9 +19,6 @@ BEGIN {
   *DEBUG=\$Tsv::DEBUG;
   undef &head;
 };
-#    use overload (
-#      q{""}    => 'tostring',
-#    );
 sub rect {
   my($self)=$_[0];
   $self->{rect};
@@ -30,24 +27,6 @@ sub level {
   my($self)=shift;
   return $self->{level};
 };
-sub left {
-  shift->rect->left(@_);
-}
-sub right {
-  shift->rect->right(@_);
-}
-sub height {
-  shift->rect->height(@_);
-};
-sub width {
-  shift->rect->width(@_);
-};
-sub top {
-  shift->rect->top(@_);
-}
-sub bottom {
-  shift->rect->bottom(@_);
-}
 sub new {
   local(@_)=@_;
   my($class)=class(shift);

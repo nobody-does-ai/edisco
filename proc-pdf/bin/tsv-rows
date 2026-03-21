@@ -8,119 +8,39 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use Nobody::PP;
-use TsvUtil qw(vert_sort);
-use TsvDB;
-use GD::Image;
-use GDUtil;
+use TsvUtil qw(group_find vert_sort);
+use TsvFile;
+use TsvDoc;
 our(@VERSION) = qw( 0 1 0 );
 
 sub main;
 main(@ARGV);
 exit(0);
-my(%tgt);
-my(@inv,@trn);
-$|++;
-
-sub nsort {
-  sort { $a <=> $b } @_;
-};
-#/*
-#  {
-#    block_num => 13,
-#    line_num  => 1,
-#    par_num   => 1,
-#    reject    => 0,
-#    word_num  => 3,
-#    x_range   => "[310,353)",
-#    y_range   => "[3100,3127)",
-#  },
-
-my(@col);
-BEGIN {
-  @col=qw(
-  doc
-  page_num
-  top_px
-  left_px
-  height_px
-  width_px
-  level
-  text
-  );
-  my($col)=join(", ",@col);
-}
-sub tdump;
-my(%row);
 sub main {
-  my($col)=join(", ",@col);
-  my($sql)=qq( select $col from tsv where level = 5 order by $col);
-  local(*_)=TsvDB::fetchall_arrayref($sql);
-  my(%set);
-  for(@_){
-    my($d,$p,$t,$l)=splice(@$_,0,4);
-    my($h,$w,$level,$text)=@$_;
-    my($b)=$h+$t;
-    my($r)=$l+$w;
-    my(%obj)=(
-      doc=>$d,
-      page=>$p,
-      y1=>$t,
-      y2=>$b,
-      x1=>$l,
-      x2=>$r,
-      level=>$level,
-      text=>$text
-    ); 
-    my($k)=join("",\%obj);
-    $row{$k}=\%obj;
-    push(@{$set{$d}{$p}}, $k);
+  my(%doc);
+  for my $file(sort glob("tsv/*.tsv")){
+    my($p)=path($file);
+    my($key)=($file=~m{(\d\d\d\d-Q\d)})[0];
+    push(@{$doc{$key}},TsvFile->new($p));
   };
-  our(%doc,@row,@word,@line,@page);
-  for my $doc(nsort(keys %set)) {
-    STDERR->say(1, $set{$doc});
-    local(*doc)=$set{$doc};
-    for my $page(nsort(keys %doc)) {
-      STDERR->say(2, $doc{$page});
-      local(*page)=$doc{$page};
-      eex(0+@page);
-      for(@page) {
-        eex($row{$_});
+  for my $key(sort keys %doc){
+    my($d)=TsvDoc->new($key,$doc{$key});
+    say $d->key;
+    for my $page(@{$d->pages}){
+      my(@words)=vert_sort(grep{defined $_->text}@{$page->word});
+      my(@rows);
+      while(@words){
+        my(@row)=group_find(@words);
+        push(@rows,\@row);
+        my(%seen)=map{$_=>1}@row;
+        @words=grep{!$seen{$_}}@words;
       };
-#          while(@row){
-#            my($y1) = min(map { $_->{y1} } @row);
-#            my(@i) = grep { $row[$_]->{y1} == $y1 } keys @row;;
-#            push(@line, @row[@i]);
-#            @row[@i]=();
-#          };
-    };
-  };
 
-  exit(0);
-}
-our(%tdump);
-our($lvl)=0;
-sub tdump {
-  my($o)=shift;
-  my($r)=ref($o);
-  my($d)=$tdump{$r};
-  if(defined($d)){
-    $d->($o);
-  } else {
-    say $o;
-  };
-};
-BEGIN {
-  $tdump{ARRAY}=sub {
-    for(@{$_[0]}){
-      tdump($_);
+      say sprintf("  %s  %d rows",$page->path,scalar(@rows));
+      for my $row(@rows){
+        my($text)=join(" ",map{$_->text}@$row);
+        say sprintf("    %s",$text);
+      };
     };
-  };
-  $tdump{HASH}=sub {
-    for(values %{$_[0]}){
-      tdump($_[0]->{$_});
-    }
-  };
-  $tdump{SCALAR}=sub {
-    tdump(${$_[0]});
   };
 };

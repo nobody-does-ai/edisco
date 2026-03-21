@@ -1,0 +1,33 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use lib "lib";
+use Nobody::Util;
+use Nobody::PP;
+use TsvFile;
+use TsvDoc;
+our(@VERSION) = qw( 0 1 0 );
+sub main {
+  my(%doc);
+  for my $file(sort glob("tsv/*.tsv")){
+    my($p)=path($file);
+    my($key)=($file=~m{(\d\d\d\d-Q\d)})[0];
+    push(@{$doc{$key}},TsvFile->new($p));
+  };
+  my(@doc);
+  for my $key(sort keys %doc){
+    push(@doc,TsvDoc->new($key,$doc{$key}));
+  };
+  for my $doc(@doc){
+    say $doc->key;
+    for my $page(@{$doc->pages}){
+      my($n)=scalar(@{$page->word});
+      say sprintf("  %s  %d words",$page->path,$n);
+    };
+  };
+};
+main;

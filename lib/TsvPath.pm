@@ -2,9 +2,6 @@ package TsvPath;
 use Nobody::Util;
 use common::sense;
 
-use overload (
-  q{""}    => 'tostring',
-);
 sub new {
   my($class)=class(shift);
   my($path)=shift;

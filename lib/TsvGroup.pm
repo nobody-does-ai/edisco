@@ -3,7 +3,7 @@ BEGIN { open(STDOUT,">&STDERR"); };
 use common::sense;
 use lib 'lib';
 use Tsv;
-use TsvUtil qw(tsv_partition);
+use TsvUtil qw(tsv_parse);
 use Nobody::Util;
 our(@ISA)=qw(Tsv);
 our(%word);
@@ -29,6 +29,9 @@ sub file {
 sub word {
   my($file)=$_[0]->file;
   my($word)=$word{$file}{word};
+  unless(defined($word)){
+    $word{$file}{word}=tsv_parse($file);
+  };
   die "no words" unless defined $word;
   $word;
 };
@@ -55,28 +58,19 @@ sub add {
   my($atsv)=($word{$file}{atsv}//=[]);
   my($line)=($word{$file}{line}//=[]);
   @_=TsvWord->from(@_);
-  my($rect)=$self->rect;
-  for my $w(@_) {
-    push(@$atsv,$w);
-    push(@$word,$w) if($w->level==5);
-
-    for($rect->{left}){
-      $_=($_//$w->left);
-      $_=min($_,$w->left);
-    };
-    for($rect->{top}){
-      $_=($_//$w->top);
-      $_=min($_,$w->top);
-    };
-    for($rect->{bottom}){
-      $_=($_//$w->bottom);
-      $_=max($_,$w->bottom);
-    };
-    for($rect->{right}){
-      $_=($_//$w->right);
-      $_=max($_,$w->right);
-    };
+  push(@$word,@_);
+  my(@x2,@x1,@y2,@y1);
+  for(@_) {
+    push(@x2,$_->rect->x2);
+    push(@x1,$_->rect->x1);
+    push(@y1,$_->rect->y1);
+    push(@y2,$_->rect->y2);
   };
+  @x2=max(@x2);
+  @x1=min(@x1);
+  @y1=min(@y1);
+  @y2=min(@y2);
+  $self->{rect}=TsvRect->new(x1=>$x1[0], x2=>$x2[0], y1=>$y1[0], y2=>$y2[0]);
 };
 unless(caller){
   package main;

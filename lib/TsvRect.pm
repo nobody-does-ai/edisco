@@ -156,9 +156,6 @@ sub clone {
 sub rect {
   return shift;
 };
-use overload (
-  q{""}    => 'tostring',
-);
 sub tostring {
   local(@_)=@_;
   my($self)=shift;
