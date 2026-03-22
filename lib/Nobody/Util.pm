@@ -2,11 +2,15 @@
 # vim: ts=2 sw=2 ft=perl
 #
 package Nobody::Util;
+use lib "lib";
 use common::sense;
 use Nobody::Util::Import;
 our(@EXPORT,@ISA);
 local($_);
-use Carp qw(carp confess cluck croak);
+use Carp;
+use Carp @Carp::EXPORT_OK;
+BEGIN { push(@EXPORT,@Carp::EXPORT_OK) };
+BEGIN { my(%EXPORT)=map { $_, $_ } @EXPORT; @EXPORT = sort keys %EXPORT; }
 use File::stat qw( :FIELDS );
 use strict;
 use warnings;
@@ -17,6 +21,7 @@ sub getcwd; sub getfds(); sub getfl(*); sub lsort; sub maybeRef($);
 sub methods; sub methods_via; sub nonblock; sub open_fds(;$); sub pasteLines(@);
 sub print_methods; sub safe_blessed; sub safe_can; sub safe_isa; sub serdate(;$);
 sub serial_maker(%); sub setfl(*$); sub uri; sub vcmp; sub vsort;
+no warnings 'redefine';
 
 sub pad {
   local(@_)=@_;
@@ -337,4 +342,8 @@ ugly hacks, but saves him time.
 =cut
 use Nobody::Util::Import;
 use Nobody::Util::Path;
+BEGIN {
+  require Exporter;
+  (@ISA)=qw(Exporter);
+};
 1;

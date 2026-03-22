@@ -30,41 +30,6 @@ sub fr_addr;
 sub to_addr;
 sub date;
 our(@parts,@part,$part,$parts,%parts);
-{
-  package MultiHash;
-  use Nobody::Util;
-  sub TIEHASH {
-    my($class)=class(shift);
-    my(%self);
-    bless(\%self,$class);
-  };
-  sub CLEAR {
-    my($hash)=shift;
-    %{$hash}=();
-  };
-  use Tie::Hash;
-  sub FIRSTKEY {
-    local($_)=scalar(keys(%{$_[0]}));
-    each %{$_[0]};
-  };
-  sub NEXTKEY {
-    each %{$_[0]};
-  };
-  sub STORE {
-    local(@_)=@_;
-    my($hash,$key,$val)=@_;
-    if(defined($hash->{$key})){
-      push(@{$hash->{$key}},@_);
-    } else {
-      $hash->{$key}=[$val];
-    };
-  };
-  sub FETCH {
-    local(@_)=@_;
-    my($hash,$key)=@_;
-    $hash->{$key};
-  };
-};
 sub body {
   return $_->{mms_body} if defined $_->{mms_body};
   return $_->{body} if defined $_->{body};

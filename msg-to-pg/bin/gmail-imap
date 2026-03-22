@@ -2,13 +2,13 @@
 use strict;
 use warnings;
 use common::sense;
-
+use lib "lib";
 use Nobody::Util;
 BEGIN {
   local(@_)="$Dir";
   s{dir/*$}{} for @_;
 };
-
+use JSONUtil;
 use Mail::IMAPClient;
 use IO::Socket::SSL;
 use Digest::MD5 qw(md5_hex);
@@ -25,26 +25,12 @@ my $config = {
 };
 
 # Setup Maildir structure
-my $base_path = path(".");
-my $dir = $base_path->child($config->{maildir_root});
+my $dir = path($config->{maildir_root});
 $dir->child($_)->mkdir for qw(cur new tmp);
 
 sub log_msg {
   my(@loc)=caller(0);
   say $loc[1],":",$loc[2],":", sprintf("[%s] %s\n", serdate, "@_");
-}
-
-sub json_load {
-    my ($p) = @_;
-    return {} unless -e $p;
-    my $raw = path($p)->slurp_raw;
-    return JSON::PP::decode_json($raw);
-}
-
-sub json_save {
-    my ($p, $data) = @_;
-    my $raw = JSON::PP->new->ascii->canonical->pretty->encode($data);
-    path($p)->spew_raw($raw);
 }
 
 sub parse_headers_from_raw {
@@ -99,18 +85,40 @@ sub rebuild_md5_manifest {
 }
 
 # Load credentials via pass
-my ($user);
-my ($pass);
+my (%pass);
 { 
-  my (@pass) = map { split } qx(pass gmail-2);
-  eex( \@pass );
-  $user=shift @pass;
-  eex( "user=$user");
-  eex($user,\@pass);
-  $pass=join(" ",@pass);
+  for( map { split m{\n+} } join("\n",qx(pass gmail)) ) {
+    my($user,@pass)=split;
+    eex($user,\@pass);
+    $pass{$user}=join(" ",@pass);
+  };
 };
-die "Credentials missing in pass" unless $user && $pass;
+sub imap {
+  my(%cred)=map { %{$_} } shift;
+  # Connect to IMAP
+  my $socket = IO::Socket::SSL->new(
+    PeerAddr => $config->{imap_server},
+    PeerPort => $config->{imap_port},
+  ) or die "SSL socket failed: $@";
 
+  my $imap = Mail::IMAPClient->new(
+    %cred,
+    Socket   => $socket,
+    Raw      => 1,
+    Uid      => 1,
+  ) or die "IMAP connection failed: $@";
+
+  die "Credentials missing in pass" unless %pass;
+  $imap;
+}
+my($imap);
+for my $cred ( map {{ user=>$_, pass=>$pass{$_} }} keys %pass ) {
+  $imap=imap($cred);
+  open(STDOUT,"|-","tee", path("log/$cred->{user}.log")->touchpath);
+  open(STDERR,">&STDOUT");
+  open(STDIN,"</dev/null");
+  last if fork;
+};
 # Load JSON index
 my $idx = json_load($config->{index_json});
 
@@ -196,20 +204,6 @@ sub clean_maildir_cur {
 
 clean_maildir_cur($dir->child('cur'));
 json_save($config->{index_json}, $idx);
-
-# Connect to IMAP
-my $socket = IO::Socket::SSL->new(
-    PeerAddr => $config->{imap_server},
-    PeerPort => $config->{imap_port},
-) or die "SSL socket failed: $@";
-
-my $imap = Mail::IMAPClient->new(
-    Socket   => $socket,
-    User     => $user,
-    Password => $pass,
-    Raw      => 1,
-    Uid      => 1,
-) or die "IMAP connection failed: $@";
 
 # SIMPLE TARGET LIST
 my @targets = qw(
