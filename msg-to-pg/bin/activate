@@ -1,0 +1,28 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Env qw( @PATH @PERL5LIB $HOME );
+our(@VERSION) = qw( 0 1 0 );
+
+my($pwd)=path(".");
+$ENV{OLD_PATH}=join(":",@PATH);
+$ENV{OLD_PERL5LIB}=join(":",@PERL5LIB);
+unshift(@PATH, $pwd->child("bin")->absolute);
+unshift(@PERL5LIB, $pwd->child("lib")->absolute);
+for(\@PATH, \@PERL5LIB){
+  say STDERR;
+  if(substr($_,0,5)eq'$HOME'){
+    substr($_,0,5,$HOME);
+  };
+
+  @$_=uniq(@$_);
+};
+$ENV{BASH_XTRACEFD}=fileno(STDLOG);
+exec "/bin/bash";
+die "exec:/bin/bash:$!";

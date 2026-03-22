@@ -18,20 +18,20 @@ use JSON::PP ();
 my $config = {
     imap_server   => 'imap.gmail.com',
     imap_port     => 993,
-    index_json    => 'mail/index.json',
+    download_dir  => './mail',
+    index_json    => './mail/index.json',
     target_label  => '[Gmail]/All Mail',
     # If you ever change this, also change the on-disk layout accordingly.
-    maildir_root  => 'mail',
+    maildir_root  => 'dir',
 };
 
 # Setup Maildir structure
-my $base_path = path(".");
+my $base_path = path($config->{download_dir});
 my $dir = $base_path->child($config->{maildir_root});
 $dir->child($_)->mkdir for qw(cur new tmp);
 
 sub log_msg {
-  my(@loc)=caller(0);
-  say $loc[1],":",$loc[2],":", sprintf("[%s] %s\n", serdate, "@_");
+  ddx(sprintf("[%s] %s\n", serdate, "@_"));
 }
 
 sub json_load {
@@ -97,19 +97,11 @@ sub rebuild_md5_manifest {
     };
     $count;
 }
-
 # Load credentials via pass
-my ($user);
-my ($pass);
-{ 
-  my (@pass) = map { split } qx(pass gmail-2);
-  eex( \@pass );
-  $user=shift @pass;
-  eex( "user=$user");
-  eex($user,\@pass);
-  $pass=join(" ",@pass);
-};
-die "Credentials missing in pass" unless $user && $pass;
+our(%pass);
+exit(0);
+my($pass)=$pass{pass};
+die "Credentials missing in pass" unless $pass{user} && $pass{pass};
 
 # Load JSON index
 my $idx = json_load($config->{index_json});
@@ -167,13 +159,13 @@ sub clean_maildir_cur {
         }
 
         # Otherwise: renamed by reader or otherwise non-canonical => rename to md5(content)
-        my $target = $cur_dir->child($md5.".eml");
+        my $target = $cur_dir->child($md5);
         if ($target->exists) {
             # duplicate content; delete the renamed copy
             log_msg("WARNING: cur/$bn renamed; canonical cur/$md5 already exists. Deleting cur/$bn.");
             $p->remove;
         } else {
-            log_msg("WARNING: cur/$bn renamed; restoring canonical name cur/$md5.eml");
+            log_msg("WARNING: cur/$bn renamed; restoring canonical name cur/$md5.");
             $p->move($target);
         }
     }
@@ -183,7 +175,6 @@ sub clean_maildir_cur {
     for my $mid (keys %{$idx->{messages}}) {
         my $r = $idx->{messages}{$mid} || next;
         my $m = $r->{md5} // next;
-        $m="$m.eml";
         next if $have{$m};
         log_msg("WARNING: index references missing cur/$m; dropping index record for $mid.");
         drop_message_by_mid($mid);
@@ -198,19 +189,8 @@ clean_maildir_cur($dir->child('cur'));
 json_save($config->{index_json}, $idx);
 
 # Connect to IMAP
-my $socket = IO::Socket::SSL->new(
-    PeerAddr => $config->{imap_server},
-    PeerPort => $config->{imap_port},
-) or die "SSL socket failed: $@";
-
-my $imap = Mail::IMAPClient->new(
-    Socket   => $socket,
-    User     => $user,
-    Password => $pass,
-    Raw      => 1,
-    Uid      => 1,
-) or die "IMAP connection failed: $@";
-
+sub create_client ;
+my($imap)=create_client;
 # SIMPLE TARGET LIST
 my @targets = qw(
     lisaclaytonpaul@gmail.com
@@ -229,21 +209,19 @@ eval {
     my $uv = eval { $imap->uidvalidity() };
     $idx->{uidvalidity} = $uv if defined $uv;
 
+    my %uids_to_check;
     log_msg("Starting individual term searches...");
 
-    my(@all_uids);
     foreach my $term (@targets) {
-      eex scalar(@all_uids);
         my $query = qq(TEXT "$term");
-        eex("sending search");
         my @results = $imap->search($query);
         log_msg(sprintf("Term [%s]: %d results", $term, scalar @results));
-        push(@all_uids,@results);
+        $uids_to_check{$_} = 1 for @results;
     }
 
-    @all_uids = uniq ( @all_uids ); 
+    my @all_uids = sort { $a <=> $b } keys %uids_to_check;
     log_msg(sprintf("Total unique UIDs to process: %d", scalar @all_uids));
-    
+
     # FAST PATH: assume index+cur are correct; only fetch unknown UIDs
     my @todo_uids = grep { !defined $idx->{uids}{$_} } @all_uids;
     log_msg(sprintf("UIDs not present in index (to fetch): %d", scalar @todo_uids));
@@ -258,8 +236,8 @@ eval {
         }
 
         my $md5 = md5_hex($raw);
-        my $cur_target = $dir->child('cur', "$md5.eml");
-        my $new_target = $dir->child('new', "$md5.eml");
+        my $cur_target = $dir->child('cur', $md5);
+        my $new_target = $dir->child('new', $md5);
 
         # Parse headers from raw (avoid per-UID header round-trips)
         my $h = parse_headers_from_raw($raw);
@@ -337,3 +315,38 @@ eval {
 
 $imap->logout;
 die "Fatal: $@\n" if $@;
+sub load_pass {
+  our(%pass);
+  unless(%pass) {
+    for(grep { s{#.*}{}; 1; } map { split m{\n} } qx(pass gmail)) {
+      my (@pass) = split;
+      local(*pass)=$pass{$pass[0]}//={ user=>$pass[0], pass=>$pass[1] };
+      for($pass{user}) {
+        if(m{rich.freeman.paul}) {
+          $pass{mdir}=path("mail/dir");
+        } elsif( m{rich.private.paul} ) {
+          $pass{mdir}=path("mail/rpp");
+        } else {
+          die "no mbox for $_";
+        }
+      };
+    };
+  };
+  \%pass;
+};
+sub create_client {
+  our(%pass);
+  local(*pass)=$pass{+shift};
+
+  my $socket = IO::Socket::SSL->new(
+    PeerAddr => $config->{imap_server},
+    PeerPort => $config->{imap_port},
+  ) or die "SSL socket failed: $@";
+  my $imap = Mail::IMAPClient->new(
+    Socket   => $socket,
+    User     => $pass{user},
+    Password => $pass{pass},
+    Raw      => 1,
+    Uid      => 1,
+  ) or die "IMAP connection failed: $@";
+};
