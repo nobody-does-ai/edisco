@@ -209,6 +209,7 @@ my @targets = qw(
     @cmplaw.com
     @pollockinvestmentadvisors.com
     @washtenaw.org
+    @umich.edu
 );
 
 eval {
