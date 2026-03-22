@@ -2,20 +2,16 @@ package JSONUtil;
 use lib "lib";
 use common::sense;
 use Nobody::Util;
-BEGIN {
-  for(sort @Nobody::Util::EXPORT) {
-    say if /c/;
-  };
-};
-use Nobody::Util @Nobody::Util::EXPORT_OK;
+use Carp qw(confess);
+use Nobody::Util;
 use Nobody::Util @Nobody::Util::EXPORT_OK;
 use JSON::PP;
 require Exporter;
 sub import {
-  confess("failure");
+  goto \&Exporter::import;
 };
 our(@ISA)=qw(Exporter);
-our(@EXPORT_OK)=qw( json_load json_save decode_json encode_json );
+our(@EXPORT)=qw( load_json save_json decode_json encode_json );
 
 sub load_json {
     my ($p) = @_;

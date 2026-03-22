@@ -120,7 +120,7 @@ for my $cred ( map {{ user=>$_, pass=>$pass{$_} }} keys %pass ) {
   last if fork;
 };
 # Load JSON index
-my $idx = json_load($config->{index_json});
+my $idx = load_json($config->{index_json});
 
 $idx->{version} //= 1;
 $idx->{folder}  //= $config->{target_label};
@@ -203,7 +203,7 @@ sub clean_maildir_cur {
 }
 
 clean_maildir_cur($dir->child('cur'));
-json_save($config->{index_json}, $idx);
+save_json($config->{index_json}, $idx);
 
 # SIMPLE TARGET LIST
 my @targets = qw(
@@ -291,7 +291,7 @@ eval {
     }
 
     # Persist index early (staged state)
-    json_save($config->{index_json}, $idx);
+    save_json($config->{index_json}, $idx);
 
     # QUICK CHECK: re-verify cur/, then promote staged new/ into cur/
     clean_maildir_cur($dir->child('cur'));
@@ -324,7 +324,7 @@ eval {
 
     # Final verify + manifest
     clean_maildir_cur($dir->child('cur'));
-    json_save($config->{index_json}, $idx);
+    save_json($config->{index_json}, $idx);
 
     log_msg("Sync complete. $added new unique messages downloaded; $promoted promoted into cur/.");
 };
