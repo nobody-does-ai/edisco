@@ -1,0 +1,26 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Env qw( @PERL5LIB @PATH );
+our(@VERSION) = qw( 0 1 0 );
+
+my($dir)=path($Dir);
+unless($dir->basename eq "bin"){
+  die "not in bin dir!";
+};
+$dir=$dir->parent;
+unshift(@PATH,$dir->absolute->stringify);
+chdir($dir);
+
+for(grep { -d } qw(../lib lib)) {
+  unshift(@PERL5LIB,$dir->absolute->stringify);
+};
+die "running" if $ENV{ENTER}++;
+exec "/bin/bash";
+
