@@ -11,15 +11,120 @@
 # Configuration -- edit %opt to change behaviour:
 
 use common::sense;
-use Path::Tiny qw(path);
+use Nobody::Util;
 use XML::LibXML::Simple qw(XMLin);
 use POSIX qw(strftime);
 use MIME::Base64 qw(decode_base64);
 use Digest::MD5 qw(md5_hex);
+use JSON::XS qw( encode_json decode_json );
 
+my %filt; 
+for( qw( 
+7343551065 7346461004 7346656622 6038651077
+7343551065 6038031699 7342726715 7342726715 7343551065 7346461004
+7342726715 7346461004
+)) {
+$filt{$_}++;
+};
+sub fr_addr;
+sub to_addr;
+sub date;
+our(@parts,@part,$part,$parts,%parts);
+{
+  package MultiHash;
+  use Nobody::Util;
+  sub TIEHASH {
+    my($class)=class(shift);
+    my(%self);
+    bless(\%self,$class);
+  };
+  sub CLEAR {
+    my($hash)=shift;
+    %{$hash}=();
+  };
+  use Tie::Hash;
+  sub FIRSTKEY {
+    local($_)=scalar(keys(%{$_[0]}));
+    each %{$_[0]};
+  };
+  sub NEXTKEY {
+    each %{$_[0]};
+  };
+  sub STORE {
+    local(@_)=@_;
+    my($hash,$key,$val)=@_;
+    if(defined($hash->{$key})){
+      push(@{$hash->{$key}},@_);
+    } else {
+      $hash->{$key}=[$val];
+    };
+  };
+  sub FETCH {
+    local(@_)=@_;
+    my($hash,$key)=@_;
+    $hash->{$key};
+  };
+};
+sub body {
+  return $_->{mms_body} if defined $_->{mms_body};
+  return $_->{body} if defined $_->{body};
+  $DB::single=1;
+  for(@{$_->{attach}}){
+      eex($_);
+  };
+  die "failed to find text";
+};
+sub parts {
+  my($msg)=shift;
+  return {} unless defined $msg->{parts};
+  local(@_)=@{delete $msg->{parts}};
+  for(keys @_){
+    if(defined($_[$_]->{part})) {
+      splice(@_,$_,1,@{$_[$_]->{part}});
+    };
+  };
+  return @_;
+};
+{
+  package Msg;
+  use Nobody::Util;
+  sub new {
+    local(@_)=@_;
+    my($class)=class(shift);
+    our(%data);
+    local(*data)=shift;
+    my($self)={};
+    $self->{date}=main::date(\%data);
+    $self->{fr}=main::fr_addr(\%data);
+    $self->{to}=main::to_addr(\%data);
+    return undef unless $filt{$self->{fr}} or $filt{$self->{to}};
+    my(%attach);
+    tie %attach,'MultiHash';
+    $self->{attach}=\%attach;
+    %{$self->{attach}}=%{main::parts(\%data)};
+    $self->{body}=main::body(\%data);
+    eex($self);
+    bless($self,$class);
+    $self;
+  };
+  sub to {
+    return $_[0]->{to};
+  };
+  sub fr {
+    return $_[0]->{fr};
+  };
+  sub body {
+    return $_[0]->{body};
+  };
+  sub date {
+    return $_[0]->{date};
+  };
+  sub attach {
+    return $_[0]->{attach};
+  };
+};
 my %opt = (
-  in      => "sms.xml",
-  maildir => "mail/sms",
+  maildir => "mail",
   domain  => 'sms.org',
   me      => '6034000820,6037573283,6037620273',
   areas   => '734,603',
@@ -30,33 +135,81 @@ my @keep_areas  = split /,/, $opt{areas};
 my %is_me       = map { $_ => 1 } @me_numbers;
 
 # ------------------------------------------------------------------ helpers --
-
+my(%norm);
+END {
+  my($norm)=encode_json(\%norm);
+  path("norm.json")->spew($norm);
+};
 sub normalize {
   # Collapse any phone number to bare 10 digits.
   # Handles: +16035551234  16035551234  (603)555-1234  603.555.1234  etc.
+  my($i,$o);
   local ($_) = @_;
-  return '' unless defined $_;
-  s/[^\d]//g;          # strip everything non-digit
-  s/^1(\d{10})$/$1/;   # strip leading country code 1 if present
-  return length($_) == 10 ? $_ : '';
+  $i="$_";
+  if(defined($_)){
+    s/[^\d]//g;          # strip everything non-digit
+    s/^1(\d{10})$/$1/;   # strip leading country code 1 if present
+  } else {
+    $_="";
+  };
+  #$_='' unless 10==length;
+  $o="$_";
+  $norm{$i}=$o;
 }
+sub fr_addr {
+  my($a);
+  if(defined($a=$_[0]->{mms_addresses})){
+    for(@$a){
+      next unless $_->{type}==137;
+      $a=normalize($_->{address}) ;
+      return $a;
+    }; 
+  } elsif( $_->{type}==1 ) {
+    return normalize($_[0]->{address});
+  } else {
+    return "16034000820";
+  };
+};
+sub to_addr {
+  my($a);
+  if(defined($a=$_[0]->{mms_addresses})){
+    for(@$a){
+      next unless $_->{type}==151;
+      $a=normalize($_->{address}) ;
+      return $a;
+    }; 
+  } elsif( $_->{type}==2 ) {
+    return normalize($_[0]->{address});
+  } else {
+    return "16034000820";
+  };
+};
 
 sub is_me       { $is_me{ normalize($_[0]) // '' } }
 sub is_wanted   {
   my $n = normalize($_[0]);
   return 0 unless length($n) == 10;
   my $area = substr($n, 0, 3);
-  return grep { $_ eq $area } @keep_areas;
+  return 1 if $filt{$n};
+  return 0;
+  #  return grep { $_ eq $area } @keep_areas;
 }
-
 sub phone_addr {
-  # Return a bare RFC 2822 address for a normalized number, with optional label.
   my ($raw, $label) = @_;
-  my $n = normalize($raw);
-  $label //= $n;
-  $label = $n if $label eq '' || $label eq '(Unknown)';
-  return qq{"$label" <$n\@$opt{domain}>};
+  return normalize($raw);
 }
+#    sub phone_addr {
+#      # Return a bare RFC 2822 address for a normalized number, with optional label.
+#      my ($raw, $label) = @_;
+#      my $n = normalize($raw);
+#      $label //= $n;
+#      $label = $n if $label eq '' || $label eq '(Unknown)';
+#      my ($res)=qq{"$label" <$n\@$opt{domain}>};
+#      open(my $addr,">>addr.list");
+#      $addr->say($res);
+#      close($addr);
+#      return $res;
+#    }
 
 sub me_addr { qq{"me" <} . $me_numbers[0] . qq{\@$opt{domain}>} }
 
@@ -316,48 +469,74 @@ sub handle_mms {
   return $written;
 }
 
-# --------------------------------------------------------------------- main --
-
+our %msg;
+my($stime);
+BEGIN {
+  $stime=time;
+};
+sub date {
+  my($date)=$_[0]->{date};
+  $date=int($date/1000) if($date>$stime);
+  die unless defined $date;
+  serdate($date);
+};
+our(@msg);
 sub main {
-  # sms.xml (or a symlink by that name) acts as a test-case override and
-  # always takes priority.  Otherwise use the most recent sms-*.xml backup.
-  my @inputs = grep { -e $_ } 'sms.xml';
-  unless(@inputs) {
-    push @inputs, reverse sort glob('sms-*.xml');
-  };
-  die "No sms.xml or sms-*.xml found\n" unless @inputs;
-  @inputs = shift(@inputs);
-
   my $maildir = path($opt{maildir});
-  $maildir->mkpath;
-
-  my ($total_sms, $total_mms) = (0, 0);
-
+  $maildir->mkdir;
+  my @inputs=(glob('xml/sms-*.xml'));
   for my $infile (@inputs) {
     my $abs = path($infile)->realpath;
     warn "Parsing $abs ...\n";
+    use XML::LibXML;
+    use XML::LibXML::Simple qw(XMLin);
 
+    my $parser = XML::LibXML->new(huge => 1);
+    my $doc    = $parser->parse_file($abs);
+    
     my $data = XMLin(
-      "$abs",
+      $doc,
       KeepRoot   => 1,
       KeyAttr    => [],
       ForceArray => [qw( sms mms part addr parts addrs )],
     );
     my $root = $data->{smses} or die "Expected <smses> root in $abs\n";
-
-    if (my $list = $root->{sms}) {
-      my $w = handle_sms($maildir, $list);
-      warn "  SMS: $w written\n";
-      $total_sms += $w;
-    }
-    if (my $list = $root->{mms}) {
-      my $w = handle_mms($maildir, $list);
-      warn "  MMS: $w written\n";
-      $total_mms += $w;
-    }
+    for(@{$root->{sms}},@{$root->{mms}}){
+      my($msg)=Msg->new($_);
+      next unless defined $msg;
+      $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
+    };
+    eex( { msgs=>0+(keys %msg) } );
   }
-
+  for my $infile( glob("json/*.json")) {
+    warn "Parsing $infile ...\n";
+    my $data = decode_json(path($infile)->slurp);
+    for(@$data){
+      $_->{archived}=join("",$_->{archived});
+      my($msg)=Msg->new($_);
+      next unless defined $msg;
+      $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
+    };
+  };
+  eex(\%msg);
+  exit(0);
+  my($total_sms)=0;
+  my($total_mms)=0;
+  our(@msg);
+  for my $date(sort keys %msg) {
+    local(*msg)=$msg{$date};
+    say "date: ", $date;
+    say refaddr(\%msg);
+    for my $fr_addr(sort keys %msg) {
+      local(*msg)=$msg{$fr_addr};
+      for my $to_addr(sort keys %msg) {
+        local(*msg)=$msg{$to_addr};
+        next unless $filt{fr_addr(\%msg)} or $filt{to_addr(\%msg)};
+        eex(\%msg);
+      }
+    }
+  };
+  path("msgs.json")->spew(join("\n",@msg));
   warn "Done. SMS=$total_sms MMS=$total_mms  Maildir=$opt{maildir}\n";
 }
-
 main();
