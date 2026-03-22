@@ -210,17 +210,10 @@ sub pdf_to_png {
     err("skip  $if to $of") if $verbose{skips};
     return $of;
   };
-  if(my $pid=fork){
-    while($pid!=waitpid($pid,0)){
-      eex "??? $?";
-    };
-    die "pdftoppm:$?" if $?;
-  } else {
-    $of->parent->mkdir;
-    open(STDOUT,">",$of->stringify);
-    exec(qw(pdftoppm -png -singlefile -r 300), $if);
-    die "exec:pdftoppm:$!";
-  };
+  $of->parent->mkdir;
+  err("xform $if to $of (convert -density 300 -colorspace Gray)");
+  system(qw(convert -density 300 -colorspace Gray), $if, $of);
+  die "convert failed: $?" if $?;
   return path($of);
 };
 sub png_to_tsv {

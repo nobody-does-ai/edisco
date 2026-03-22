@@ -84,8 +84,8 @@ sub main {
       for my $row(@rows){
         my(@w)=words_merge(@$row);
         my($text)=join(' ',map{$_->text}@w);
-        if   ($text=~/^TRANSACTION/){ $section='xact'; next }
-        elsif($text=~/^INVESTMENT/) { $section='ivst'; next }
+        if   ($text=~/^TRANSACTIONS/){ $section='xact'; next }
+        elsif($text=~/^INVESTMENTS/) { $section='ivst'; next }
         next unless $section;
         next if $text=~m{^(Date\b|Number\b|Page\b|A CONSOL|COVERING|HOW MY)}i;
         if(is_account($text)){ $account=(split(/\s+/,$text))[0]; next };
