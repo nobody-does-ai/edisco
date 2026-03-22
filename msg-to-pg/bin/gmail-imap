@@ -5,7 +5,7 @@ use common::sense;
 use lib "lib";
 use Nobody::Util;
 BEGIN {
-  local(@_)="$Dir";
+  local(@_) = "$Dir";
   s{dir/*$}{} for @_;
 };
 use JSONUtil;
@@ -14,320 +14,344 @@ use IO::Socket::SSL;
 use Digest::MD5 qw(md5_hex);
 use JSON::PP ();
 
-# Hard-coded Configuration
-my $config = {
-    imap_server   => 'imap.gmail.com',
-    imap_port     => 993,
-    index_json    => 'mail/index.json',
-    target_label  => '[Gmail]/All Mail',
-    # If you ever change this, also change the on-disk layout accordingly.
-    maildir_root  => 'mail',
-};
+my $pass_entry = resolve_pass_entry(shift @ARGV);
+my $config = load_account_config($pass_entry);
 
-# Setup Maildir structure
 my $dir = path($config->{maildir_root});
+$dir->mkpath;
 $dir->child($_)->mkdir for qw(cur new tmp);
+path($config->{index_json})->parent->mkpath;
 
-sub log_msg {
-  my(@loc)=caller(0);
-  say $loc[1],":",$loc[2],":", sprintf("[%s] %s\n", serdate, "@_");
+my $imap = imap($config);
+die "IMAP session was not created\n" unless $imap;
+
+my $idx = load_json($config->{index_json}) // {};
+$idx->{version} //= 1;
+$idx->{folder}  //= $config->{target_label};
+$idx->{uidvalidity} //= undef;
+$idx->{messages} //= {};
+$idx->{uids}     //= {};
+
+sub resolve_pass_entry {
+  my ($arg) = @_;
+  return $arg if defined($arg) && length($arg) && $arg =~ m{/};
+  return "gmail/$arg" if defined($arg) && length($arg);
+  return "gmail/rich.freeman.paul";
 }
 
-sub parse_headers_from_raw {
-    my ($raw) = @_;
-    my %h;
+sub load_account_config {
+  my ($entry) = @_;
+  my $raw = qx(pass show -- $entry);
+  die "Failed to read pass entry $entry\n" if $? != 0;
 
-    # Grab header block (up to first blank line)
-    my ($hdr) = $raw =~ /\A(.*?\r?\n)\r?\n/s;
-    $hdr //= $raw;
+  my $cfg = eval { JSON::PP::decode_json($raw) };
+  die "Invalid JSON in pass entry $entry: $@\n" if $@;
+  die "Config in pass entry $entry must be a JSON object\n" unless ref($cfg) eq 'HASH';
 
-    # Unfold continuations
-    $hdr =~ s/\r?\n[ \t]+/ /g;
+  $cfg->{imap_server} //= 'imap.gmail.com';
+  $cfg->{imap_port}   //= 993;
+  $cfg->{index_json}  //= 'index.json';
+  $cfg->{target_label}  //= '[Gmail]/All Mail';
+  $cfg->{maildir_root}  //= 'mail';
+  $cfg->{targets} //= [ 'All' ];
 
-    for my $field (qw(Message-ID Date From To Subject)) {
-        if ($hdr =~ /^$field:\s*(.*?)\r?\n/im) {
-            my $v = $1;
-            $v =~ s/\s+$//;
-            $h{lc($field)} = $v;
-        }
-    }
+  my @required = qw(user pass index_json target_label maildir_root targets);
+  for my $key (@required) {
+    die "Missing required config key '$key' in pass entry $entry\n"
+      unless exists($cfg->{$key});
+  }
 
-    if (defined $h{'message-id'}) {
-        my $mid = $h{'message-id'};
-        $mid =~ s/^\s*<//;
-        $mid =~ s/>\s*$//;
-        $mid =~ s/\s+$//;
-        $h{'message-id'} = $mid;
-    }
+  die "Config key 'user' must be a non-empty string\n"
+    unless defined($cfg->{user}) && !ref($cfg->{user}) && length($cfg->{user});
+  die "Config key 'pass' must be a non-empty string\n"
+    unless defined($cfg->{pass}) && !ref($cfg->{pass}) && length($cfg->{pass});
+  die "Config key 'imap_server' must be a non-empty string\n"
+    unless defined($cfg->{imap_server}) && !ref($cfg->{imap_server}) && length($cfg->{imap_server});
+  die "Config key 'imap_port' must be numeric\n"
+    unless defined($cfg->{imap_port}) && $cfg->{imap_port} =~ /\A\d+\z/;
+    $cfg->{index_json}//="index.json";
+  die "Config key 'index_json' must be a non-empty string\n"
+    unless defined($cfg->{index_json}) && !ref($cfg->{index_json}) && length($cfg->{index_json});
+  die "Config key 'target_label' must be a non-empty string\n"
+    unless defined($cfg->{target_label}) && !ref($cfg->{target_label}) && length($cfg->{target_label});
+  die "Config key 'maildir_root' must be a non-empty string\n"
+    unless defined($cfg->{maildir_root}) && !ref($cfg->{maildir_root}) && length($cfg->{maildir_root});
+  die "Config key 'targets' must be a JSON array\n"
+    unless ref($cfg->{targets}) eq 'ARRAY';
+  die "Config key 'targets' must contain at least one search term\n"
+    unless @{$cfg->{targets}};
+  for my $term (@{$cfg->{targets}}) {
+    die "Each target must be a non-empty string\n"
+      unless defined($term) && !ref($term) && length($term);
+  }
 
-    return \%h;
+  if ($entry =~ m{\Agmail-imap/([^/]+)\z}) {
+    die "Pass entry user '$1' does not match config user '$cfg->{user}'\n"
+      unless $cfg->{user} eq $1;
+  }
+
+  return $cfg;
 }
 
-sub rebuild_md5_manifest {
-    my (@cur_dir) = @_;
-    my @files;
-    my($count)=0;
-    while(@cur_dir) {
-      my(@lines);
-      my($cur_dir)=shift(@cur_dir);
-      for my $p( $cur_dir->children ) {
-        if( -d ) {
-          push(@cur_dir,$p);
-        } elsif ( -f ) {
-          my $md5 = md5_hex($p->slurp_raw);
-          push @lines, "$md5  ".($p->basename);
-        }
-      }
-      $cur_dir->child('.md5')->spew(join("\n", splice(@lines),""));
-      $count+=scalar(@lines);
-    };
-    $count;
-}
-
-# Load credentials via pass
-my (%pass);
-{ 
-  for( map { split m{\n+} } join("\n",qx(pass gmail)) ) {
-    my($user,@pass)=split;
-    eex($user,\@pass);
-    $pass{$user}=join(" ",@pass);
-  };
-};
 sub imap {
-  my(%cred)=map { %{$_} } shift;
-  # Connect to IMAP
+  my ($cfg) = @_;
+
   my $socket = IO::Socket::SSL->new(
-    PeerAddr => $config->{imap_server},
-    PeerPort => $config->{imap_port},
+    PeerAddr => $cfg->{imap_server},
+    PeerPort => $cfg->{imap_port},
   ) or die "SSL socket failed: $@";
 
   my $imap = Mail::IMAPClient->new(
-    %cred,
+    User     => $cfg->{user},
+    Password => $cfg->{pass},
     Socket   => $socket,
     Raw      => 1,
     Uid      => 1,
   ) or die "IMAP connection failed: $@";
 
-  die "Credentials missing in pass" unless %pass;
-  $imap;
+  return $imap;
 }
-my($imap);
-for my $cred ( map {{ user=>$_, pass=>$pass{$_} }} keys %pass ) {
-  $imap=imap($cred);
-  open(STDOUT,"|-","tee", path("log/$cred->{user}.log")->touchpath);
-  open(STDERR,">&STDOUT");
-  open(STDIN,"</dev/null");
-  last if fork;
-};
-# Load JSON index
-my $idx = load_json($config->{index_json});
 
-$idx->{version} //= 1;
-$idx->{folder}  //= $config->{target_label};
-$idx->{uidvalidity} //= undef;
-$idx->{messages} //= {}; # message-id => { md5, uid, date, from, to, subject }
-$idx->{uids}     //= {}; # uid => message-id
+sub log_msg {
+  my (@loc) = caller(0);
+  say $loc[1], ":", $loc[2], ": ", sprintf("[%s] %s\n", serdate, "@_");
+}
+
+sub parse_headers_from_raw {
+  my ($raw) = @_;
+  my %h;
+
+  my ($hdr) = $raw =~ /\A(.*?\r?\n)\r?\n/s;
+  $hdr //= $raw;
+  $hdr =~ s/\r?\n[ \t]+/ /g;
+
+  for my $field (qw(Message-ID Date From To Subject)) {
+    if ($hdr =~ /^$field:\s*(.*?)\r?\n/im) {
+      my $v = $1;
+      $v =~ s/\s+$//;
+      $h{lc($field)} = $v;
+    }
+  }
+
+  if (defined $h{'message-id'}) {
+    my $mid = $h{'message-id'};
+    $mid =~ s/^\s*<//;
+    $mid =~ s/>\s*$//;
+    $mid =~ s/\s+$//;
+    $h{'message-id'} = $mid;
+  }
+
+  return \%h;
+}
+
+sub rebuild_md5_manifest {
+  my (@cur_dir) = @_;
+  my $count = 0;
+  while (@cur_dir) {
+    my @lines;
+    my $cur_dir = shift(@cur_dir);
+    for my $p ($cur_dir->children) {
+      if (-d $p) {
+        push(@cur_dir, $p);
+      } elsif (-f $p) {
+        my $md5 = md5_hex($p->slurp_raw);
+        push @lines, "$md5  " . $p->basename;
+      }
+    }
+    my $manifest = @lines ? join("\n", @lines) . "\n" : "";
+    $cur_dir->child('.md5')->spew_raw($manifest);
+    $count += scalar(@lines);
+  }
+  return $count;
+}
 
 sub drop_message_by_mid {
-    my ($mid) = @_;
-    my $rec = $idx->{messages}{$mid} or return;
-    my $uid = $rec->{uid};
-    delete $idx->{uids}{$uid} if defined $uid;
-    delete $idx->{messages}{$mid};
+  my ($mid) = @_;
+  my $rec = $idx->{messages}{$mid} or return;
+  my $uid = $rec->{uid};
+  delete $idx->{uids}{$uid} if defined $uid;
+  delete $idx->{messages}{$mid};
+}
+
+sub canonical_mail_filename {
+  my ($md5) = @_;
+  return "$md5.eml";
+}
+
+sub md5_from_filename {
+  my ($filename) = @_;
+  return unless defined $filename;
+  return $1 if $filename =~ /\A([0-9a-f]{32})(?:\.eml)?\z/;
+  return;
 }
 
 sub drop_messages_by_md5_filename {
-    my ($fname_md5) = @_;
-    # Remove any message records pointing at this md5 filename.
-    for my $mid (keys %{$idx->{messages}}) {
-        my $r = $idx->{messages}{$mid} || next;
-        next unless defined $r->{md5} && $r->{md5} eq $fname_md5;
-        drop_message_by_mid($mid);
-    }
+  my ($fname_md5) = @_;
+  my $md5 = md5_from_filename($fname_md5) // return;
+  for my $mid (keys %{$idx->{messages}}) {
+    my $r = $idx->{messages}{$mid} || next;
+    next unless defined $r->{md5} && $r->{md5} eq $md5;
+    drop_message_by_mid($mid);
+  }
 }
 
 sub clean_maildir_cur {
-    my ($cur_dir) = @_;
+  my ($cur_dir) = @_;
+  my @paths = sort $cur_dir->children;
 
-    # 1) Rename "reader-renamed" files back to md5(content)
-    # 2) Delete "altered" files where filename is md5 but content md5 != filename
-    # 3) Remove index entries for anything removed
-    my @paths = sort $cur_dir->children;
+  for my $p (@paths) {
+    next unless -f $p;
+    my $bn = $p->basename;
+    next if $bn =~ /^\./;
 
-    for my $p (@paths) {
-        next unless -f $p;
-        my $bn = $p->basename;
-        next if $bn =~ /^\./; # skip .md5 etc
+    my $raw = $p->slurp_raw;
+    my $md5 = md5_hex($raw);
+    my $canon = canonical_mail_filename($md5);
 
-        my $raw = $p->slurp_raw;
-        my $md5 = md5_hex($raw);
-
-        if ($bn eq $md5) {
-            next;
-        }
-
-        # If filename looks like an md5 but doesn't match -> altered
-        if ($bn =~ /\A[0-9a-f]{32}\z/ && $bn ne $md5) {
-            log_msg("WARNING: cur/$bn appears altered (md5 is $md5). Deleting and dropping index entries.");
-            $p->remove;
-            drop_messages_by_md5_filename($bn);
-            next;
-        }
-
-        # Otherwise: renamed by reader or otherwise non-canonical => rename to md5(content)
-        my $target = $cur_dir->child($md5.".eml");
-        if ($target->exists) {
-            # duplicate content; delete the renamed copy
-            log_msg("WARNING: cur/$bn renamed; canonical cur/$md5 already exists. Deleting cur/$bn.");
-            $p->remove;
-        } else {
-            log_msg("WARNING: cur/$bn renamed; restoring canonical name cur/$md5.eml");
-            $p->move($target);
-        }
+    if ($bn eq $canon) {
+      next;
     }
 
-    # Purge index entries whose md5 file no longer exists
-    my %have = map { $_->basename => 1 } grep { -f $_ && $_->basename !~ /^\./ } $cur_dir->children;
-    for my $mid (keys %{$idx->{messages}}) {
-        my $r = $idx->{messages}{$mid} || next;
-        my $m = $r->{md5} // next;
-        $m="$m.eml";
-        next if $have{$m};
-        log_msg("WARNING: index references missing cur/$m; dropping index record for $mid.");
-        drop_message_by_mid($mid);
+    if (defined(md5_from_filename($bn)) && $bn ne $canon) {
+      log_msg("WARNING: cur/$bn appears altered (md5 is $md5). Deleting and dropping index entries.");
+      $p->remove;
+      drop_messages_by_md5_filename($bn);
+      next;
     }
 
-    # Rebuild md5 manifest
-    my $n = rebuild_md5_manifest($cur_dir);
-    log_msg("Verified cur/ integrity and rebuilt .md5 ($n files).");
+    my $target = $cur_dir->child($canon);
+    if ($target->exists) {
+      log_msg("WARNING: cur/$bn renamed; canonical cur/$canon already exists. Deleting cur/$bn.");
+      $p->remove;
+    } else {
+      log_msg("WARNING: cur/$bn renamed; restoring canonical name cur/$canon");
+      $p->move($target);
+    }
+  }
+
+  my %have = map { $_->basename => 1 } grep { -f $_ && $_->basename !~ /^\./ } $cur_dir->children;
+  for my $mid (keys %{$idx->{messages}}) {
+    my $r = $idx->{messages}{$mid} || next;
+    my $m = canonical_mail_filename($r->{md5} // next);
+    next if $have{$m};
+    log_msg("WARNING: index references missing cur/$m for $mid; leaving index record intact.");
+  }
+
+  my $n = rebuild_md5_manifest($cur_dir);
+  log_msg("Verified cur/ integrity and rebuilt .md5 ($n files).");
 }
 
 clean_maildir_cur($dir->child('cur'));
 save_json($config->{index_json}, $idx);
 
-# SIMPLE TARGET LIST
-my @targets = qw(
-    lisaclaytonpaul@gmail.com
-    johnbartlettpaul@gmail.com
-    @cmplaw.com
-    @pollockinvestmentadvisors.com
-    @washtenaw.org
-);
+{
+  my $folder = $config->{target_label};
+  log_msg("Using pass entry $pass_entry for $config->{user}");
+  log_msg("Selecting folder: $folder");
+  $imap->select($folder) or die "Could not select $folder: $@";
 
-eval {
-    my $folder = $config->{target_label};
-    log_msg("Selecting folder: $folder");
-    $imap->select($folder) or die "Could not select $folder: $@";
+  my $uv = eval { $imap->uidvalidity() };
+  $idx->{uidvalidity} = $uv if defined $uv;
 
-    # Record UIDVALIDITY once (best-effort)
-    my $uv = eval { $imap->uidvalidity() };
-    $idx->{uidvalidity} = $uv if defined $uv;
+  log_msg("Starting individual term searches...");
 
-    log_msg("Starting individual term searches...");
+  my @all_uids;
+  foreach my $term (@{$config->{targets}}) {
+    my $query = qq(TEXT "$term");
+    my @results = $imap->search($query);
+    log_msg(sprintf("Term [%s]: %d results", $term, scalar @results));
+    push(@all_uids, @results);
+  }
 
-    my(@all_uids);
-    foreach my $term (@targets) {
-      eex scalar(@all_uids);
-        my $query = qq(TEXT "$term");
-        eex("sending search");
-        my @results = $imap->search($query);
-        log_msg(sprintf("Term [%s]: %d results", $term, scalar @results));
-        push(@all_uids,@results);
+  @all_uids = uniq(@all_uids);
+  log_msg(sprintf("Total unique UIDs to process: %d", scalar @all_uids));
+
+  my @todo_uids = grep { !defined $idx->{uids}{$_} } @all_uids;
+  log_msg(sprintf("UIDs not present in index (to fetch): %d", scalar @todo_uids));
+
+  my $added = 0;
+
+  for my $uid (@todo_uids) {
+    my $raw = $imap->message_string($uid);
+    unless ($raw) {
+      warn "Failed to fetch body for UID $uid: $@";
+      next;
     }
 
-    @all_uids = uniq ( @all_uids ); 
-    log_msg(sprintf("Total unique UIDs to process: %d", scalar @all_uids));
-    
-    # FAST PATH: assume index+cur are correct; only fetch unknown UIDs
-    my @todo_uids = grep { !defined $idx->{uids}{$_} } @all_uids;
-    log_msg(sprintf("UIDs not present in index (to fetch): %d", scalar @todo_uids));
+    my $md5 = md5_hex($raw);
+    my $cur_target = $dir->child('cur', canonical_mail_filename($md5));
+    my $new_target = $dir->child('new', canonical_mail_filename($md5));
 
-    my $added = 0;
+    my $h = parse_headers_from_raw($raw);
+    my $mid = $h->{'message-id'};
 
-    for my $uid (@todo_uids) {
-        my $raw = $imap->message_string($uid);
-        unless ($raw) {
-            warn "Failed to fetch body for UID $uid: $@";
-            next;
-        }
-
-        my $md5 = md5_hex($raw);
-        my $cur_target = $dir->child('cur', "$md5.eml");
-        my $new_target = $dir->child('new', "$md5.eml");
-
-        # Parse headers from raw (avoid per-UID header round-trips)
-        my $h = parse_headers_from_raw($raw);
-        my $mid = $h->{'message-id'};
-
-        unless ($mid) {
-            log_msg("WARNING: UID $uid has no Message-ID; skipping (md5=$md5).");
-            next;
-        }
-
-        # If we already have this Message-ID indexed, just backfill uid mapping and skip writing
-        if (defined $idx->{messages}{$mid}) {
-            $idx->{uids}{$uid} = $mid;
-            $idx->{messages}{$mid}{uid} //= $uid;
-            next;
-        }
-
-        # Store raw message into new/ (do not move into cur/ until after verification)
-        unless ($cur_target->exists || $new_target->exists) {
-            $new_target->spew_raw($raw);
-        }
-
-        $idx->{messages}{$mid} = {
-            md5     => $md5,
-            uid     => $uid,
-            date    => $h->{date},
-            from    => $h->{from},
-            to      => $h->{to},
-            subject => $h->{subject},
-        };
-        $idx->{uids}{$uid} = $mid;
-
-        $added++;
-        log_msg("Downloaded $added new unique messages (staged in new/).");
+    unless ($mid) {
+      log_msg("WARNING: UID $uid has no Message-ID; skipping (md5=$md5).");
+      next;
     }
 
-    # Persist index early (staged state)
-    save_json($config->{index_json}, $idx);
-
-    # QUICK CHECK: re-verify cur/, then promote staged new/ into cur/
-    clean_maildir_cur($dir->child('cur'));
-
-    my $new_dir = $dir->child('new');
-    my @staged = sort grep { -f $_ && $_->basename !~ /^\./ } $new_dir->children;
-
-    my $promoted = 0;
-    for my $p (@staged) {
-        my $bn = $p->basename;
-        my $raw = $p->slurp_raw;
-        my $md5 = md5_hex($raw);
-
-        if ($bn ne $md5) {
-            log_msg("WARNING: new/$bn altered or renamed (md5 is $md5). Deleting and dropping index entries.");
-            $p->remove;
-            drop_messages_by_md5_filename($bn);
-            next;
-        }
-
-        my $dest = $dir->child('cur', $bn);
-        if ($dest->exists) {
-            $p->remove; # already have it
-            next;
-        }
-
-        $p->move($dest);
-        $promoted++;
+    if (defined $idx->{messages}{$mid}) {
+      $idx->{uids}{$uid} = $mid;
+      $idx->{messages}{$mid}{uid} //= $uid;
+      if ($cur_target->exists || $new_target->exists) {
+        next;
+      }
+      log_msg("WARNING: index has $mid but cur/" . canonical_mail_filename($md5) . " is missing; restaging message from UID $uid.");
     }
 
-    # Final verify + manifest
-    clean_maildir_cur($dir->child('cur'));
-    save_json($config->{index_json}, $idx);
+    unless ($cur_target->exists || $new_target->exists) {
+      $new_target->spew_raw($raw);
+    }
 
-    log_msg("Sync complete. $added new unique messages downloaded; $promoted promoted into cur/.");
-};
+    $idx->{messages}{$mid} = {
+      md5     => $md5,
+      uid     => $uid,
+      date    => $h->{date},
+      from    => $h->{from},
+      to      => $h->{to},
+      subject => $h->{subject},
+    };
+    $idx->{uids}{$uid} = $mid;
 
-$imap->logout;
-die "Fatal: $@\n" if $@;
+    $added++;
+    log_msg("Downloaded $added new unique messages (staged in new/).");
+  }
+
+  save_json($config->{index_json}, $idx);
+
+  clean_maildir_cur($dir->child('cur'));
+
+  my $new_dir = $dir->child('new');
+  my @staged = sort grep { -f $_ && $_->basename !~ /^\./ } $new_dir->children;
+
+  my $promoted = 0;
+  for my $p (@staged) {
+    my $bn = $p->basename;
+    my $raw = $p->slurp_raw;
+    my $md5 = md5_hex($raw);
+    my $canon = canonical_mail_filename($md5);
+
+    if ($bn ne $canon) {
+      log_msg("WARNING: new/$bn altered or renamed (md5 is $md5). Deleting and dropping index entries.");
+      $p->remove;
+      drop_messages_by_md5_filename($bn);
+      next;
+    }
+
+    my $dest = $dir->child('cur', $bn);
+    if ($dest->exists) {
+      $p->remove;
+      next;
+    }
+
+    $p->move($dest);
+    $promoted++;
+  }
+
+  clean_maildir_cur($dir->child('cur'));
+  save_json($config->{index_json}, $idx);
+
+  log_msg("Sync complete. $added new unique messages downloaded; $promoted promoted into cur/.");
+}
+
+$imap->logout if $imap && eval { $imap->IsConnected };
