@@ -1,3 +1,6 @@
 [submodule "snips"]
 	path = snips
 	url = ./snips/
+[submodule "webapp"]
+	path = webapp
+	url = ./webapp
