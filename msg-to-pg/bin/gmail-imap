@@ -53,7 +53,8 @@ sub load_account_config {
   $cfg->{index_json}  //= 'index.json';
   $cfg->{target_label}  //= '[Gmail]/All Mail';
   $cfg->{maildir_root}  //= 'mail';
-  $cfg->{targets} //= [ 'All' ];
+  $cfg->{pass} //= delete $cfg->{password} if exists $cfg->{password};
+  $cfg->{targets} //= [];
 
   my @required = qw(user pass index_json target_label maildir_root targets);
   for my $key (@required) {
@@ -69,7 +70,6 @@ sub load_account_config {
     unless defined($cfg->{imap_server}) && !ref($cfg->{imap_server}) && length($cfg->{imap_server});
   die "Config key 'imap_port' must be numeric\n"
     unless defined($cfg->{imap_port}) && $cfg->{imap_port} =~ /\A\d+\z/;
-    $cfg->{index_json}//="index.json";
   die "Config key 'index_json' must be a non-empty string\n"
     unless defined($cfg->{index_json}) && !ref($cfg->{index_json}) && length($cfg->{index_json});
   die "Config key 'target_label' must be a non-empty string\n"
@@ -78,8 +78,6 @@ sub load_account_config {
     unless defined($cfg->{maildir_root}) && !ref($cfg->{maildir_root}) && length($cfg->{maildir_root});
   die "Config key 'targets' must be a JSON array\n"
     unless ref($cfg->{targets}) eq 'ARRAY';
-  die "Config key 'targets' must contain at least one search term\n"
-    unless @{$cfg->{targets}};
   for my $term (@{$cfg->{targets}}) {
     die "Each target must be a non-empty string\n"
       unless defined($term) && !ref($term) && length($term);
@@ -253,14 +251,19 @@ save_json($config->{index_json}, $idx);
   my $uv = eval { $imap->uidvalidity() };
   $idx->{uidvalidity} = $uv if defined $uv;
 
-  log_msg("Starting individual term searches...");
+  log_msg(@{$config->{targets}} ? "Starting individual term searches..." : "No targets configured; searching ALL messages...");
 
   my @all_uids;
-  foreach my $term (@{$config->{targets}}) {
-    my $query = qq(TEXT "$term");
-    my @results = $imap->search($query);
-    log_msg(sprintf("Term [%s]: %d results", $term, scalar @results));
-    push(@all_uids, @results);
+  if (@{$config->{targets}}) {
+    foreach my $term (@{$config->{targets}}) {
+      my $query = qq(TEXT "$term");
+      my @results = $imap->search($query);
+      log_msg(sprintf("Term [%s]: %d results", $term, scalar @results));
+      push(@all_uids, @results);
+    }
+  } else {
+    @all_uids = $imap->search('ALL');
+    log_msg(sprintf("ALL: %d results", scalar @all_uids));
   }
 
   @all_uids = uniq(@all_uids);
