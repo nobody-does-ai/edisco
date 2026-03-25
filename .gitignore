@@ -1,4 +1,4 @@
-*.json
+json
 lock
 supervise
 *.log.gz
