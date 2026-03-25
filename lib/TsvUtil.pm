@@ -13,6 +13,7 @@ BEGIN {
   tsv_to_tsv
   paths trace
   vert_hash_cmp vert_cmp vert_sort group_find words_merge
+  split_lines is_num clean_num parse_xact parse_ivst
   );
 };
 sub group_text {
@@ -118,6 +119,52 @@ sub words_merge {
   };
   return @out;
 };
+sub split_lines {
+  my(@words)=vert_sort(grep{defined $_->text}@_);
+  my(@rows);
+  while(@words){
+    my(@row)=group_find(@words);
+    push(@rows,\@row);
+    my(%seen)=map{$_=>1}@row;
+    @words=grep{!$seen{$_}}@words;
+  };
+  return @rows;
+};
+sub is_num { ($_[0]//'') =~ m{^-?[\d,]*\.?\d+$} }
+sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
+sub parse_xact {
+  my($text)=join(' ', map{$_->text//''}@_);
+  my(@tok)=split(/\s+/,$text);
+  return unless @tok >= 2;
+  my($date)=$tok[0];
+  return unless $date =~ m{^\d{1,2}/\d{2}/\d{4}$};
+  my($amount)=$tok[-1];
+  return unless is_num($amount);
+  my($desc)=join(' ',@tok[1..$#tok-1]);
+  return { date=>$date, desc=>$desc, amount=>clean_num($amount) };
+};
+sub parse_ivst {
+  my(@w)=@_;
+  my(@nums);
+  while(@w && is_num($w[-1]->text)){
+    unshift @nums, clean_num((pop @w)->text);
+  };
+  return unless @nums >= 3;
+  my($desc)=join(' ', map{$_->text//''}@w);
+  return unless $desc =~ /\w/;
+  return if $desc =~ /^Total\b/i;
+  my($num,$sprice,$total,$basis,$unreal);
+  if    (@nums==5){ ($num,$sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==4){ ($sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==3){ ($total,$basis,$unreal)=@nums };
+  my(%h)=(desc=>$desc);
+  $h{num}   =$num    if defined $num;
+  $h{sprice}=$sprice if defined $sprice;
+  $h{total} =$total  if defined $total;
+  $h{basis} =$basis  if defined $basis;
+  $h{unreal}=$unreal if defined $unreal;
+  return \%h;
+};
 sub tsv_to_tsv {
   trace(@_);
   my($out,@list)=@_;
@@ -167,7 +214,7 @@ sub trace {
   say STDERR $msg;
 };
 sub tsv_parse {
-  my $path=shift;
+  my $path=path(shift);
   my(@rows)=$path->lines ;
   my(@cols)=map { split } shift(@rows);
   my(@word);

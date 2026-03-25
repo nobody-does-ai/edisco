@@ -1,4 +1,7 @@
 *.json
+lock
+supervise
+*.log.gz
 *.log
 *.png
 *.tar.gz

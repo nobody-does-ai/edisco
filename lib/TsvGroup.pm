@@ -34,12 +34,6 @@ sub word {
   die "no words" unless defined $word;
   $word;
 };
-sub atsv {
-  my($file)=$_[0]->file;
-  my($word)=$word{$file}{atsv};
-  die "no words" unless defined $word;
-  $word;
-};
 sub line {
   my($file)=$_[0]->file;
   my($line)=$word{$file}{line};

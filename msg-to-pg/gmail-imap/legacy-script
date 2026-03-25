@@ -9,6 +9,14 @@ BEGIN {
   s{dir/*$}{} for @_;
 };
 
+# SIMPLE TARGET LIST
+my @targets = qw(
+lisaclaytonpaul@gmail.com
+johnbartlettpaul@gmail.com
+@cmplaw.com
+@pollockinvestmentadvisors.com
+@washtenaw.org
+);
 use Mail::IMAPClient;
 use IO::Socket::SSL;
 use Digest::MD5 qw(md5_hex);
@@ -72,14 +80,6 @@ sub main {
       Raw      => 1,
       Uid      => 1,
     ) or die "IMAP connection failed: $@";
-    # SIMPLE TARGET LIST
-    my @targets = qw(
-    lisaclaytonpaul@gmail.com
-    johnbartlettpaul@gmail.com
-    @cmplaw.com
-    @pollockinvestmentadvisors.com
-    @washtenaw.org
-    );
     log_msg( qq(targets locked) );
 
     # Setup Maildir structure

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+cd "$(dirname "${BASH_SOURCE}")" 
+dir=/var/log/runit/$(cd .. && basename $PWD)
+mkdir -p $dir
+ln -sf $dir/current $PWD
+exec setlock lock svlogd -vttt "${dir}"
+echo "failed to run"
+exit 1

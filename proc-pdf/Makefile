@@ -1,2 +1,4 @@
-all:
-	vi-perl bin/up-scale-down-scale.pl
+test:
+	prove -l t/
+
+.PHONY: test

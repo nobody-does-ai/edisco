@@ -13,24 +13,26 @@ use Mail::IMAPClient;
 use IO::Socket::SSL;
 use Digest::MD5 qw(md5_hex);
 use JSON::PP ();
-
-my $pass_entry = resolve_pass_entry(shift @ARGV);
+push(@ARGV, qw(
+  gmail/rich.freeman.paul gmail/rich.paul.freeman gmail/rich.private.paul
+  )
+) unless @ARGV;
+my $pass_entry = resolve_pass_entry(splice(@ARGV,rand(@ARGV),1));
 my $config = load_account_config($pass_entry);
 
-my $dir = path($config->{maildir_root});
-$dir->mkpath;
+my $dir = path($config->{maildir});
 $dir->child($_)->mkdir for qw(cur new tmp);
-path($config->{index_json})->parent->mkpath;
-
-my $imap = imap($config);
-die "IMAP session was not created\n" unless $imap;
-
-my $idx = load_json($config->{index_json}) // {};
+my($idx_file)=$dir->child("index.json");
+my $idx = load_json($idx_file);
 $idx->{version} //= 1;
 $idx->{folder}  //= $config->{target_label};
 $idx->{uidvalidity} //= undef;
 $idx->{messages} //= {};
 $idx->{uids}     //= {};
+
+my $imap = imap($config);
+die "IMAP session was not created\n" unless $imap;
+
 
 sub resolve_pass_entry {
   my ($arg) = @_;
@@ -50,13 +52,11 @@ sub load_account_config {
 
   $cfg->{imap_server} //= 'imap.gmail.com';
   $cfg->{imap_port}   //= 993;
-  $cfg->{index_json}  //= 'index.json';
   $cfg->{target_label}  //= '[Gmail]/All Mail';
-  $cfg->{maildir_root}  //= 'mail';
   $cfg->{pass} //= delete $cfg->{password} if exists $cfg->{password};
   $cfg->{targets} //= [];
 
-  my @required = qw(user pass index_json target_label maildir_root targets);
+  my @required = qw(user pass target_label maildir targets);
   for my $key (@required) {
     die "Missing required config key '$key' in pass entry $entry\n"
       unless exists($cfg->{$key});
@@ -70,12 +70,10 @@ sub load_account_config {
     unless defined($cfg->{imap_server}) && !ref($cfg->{imap_server}) && length($cfg->{imap_server});
   die "Config key 'imap_port' must be numeric\n"
     unless defined($cfg->{imap_port}) && $cfg->{imap_port} =~ /\A\d+\z/;
-  die "Config key 'index_json' must be a non-empty string\n"
-    unless defined($cfg->{index_json}) && !ref($cfg->{index_json}) && length($cfg->{index_json});
   die "Config key 'target_label' must be a non-empty string\n"
     unless defined($cfg->{target_label}) && !ref($cfg->{target_label}) && length($cfg->{target_label});
-  die "Config key 'maildir_root' must be a non-empty string\n"
-    unless defined($cfg->{maildir_root}) && !ref($cfg->{maildir_root}) && length($cfg->{maildir_root});
+  die "Config key 'maildir' must be a non-empty string\n"
+    unless defined($cfg->{maildir}) && !ref($cfg->{maildir}) && length($cfg->{maildir});
   die "Config key 'targets' must be a JSON array\n"
     unless ref($cfg->{targets}) eq 'ARRAY';
   for my $term (@{$cfg->{targets}}) {
@@ -240,7 +238,7 @@ sub clean_maildir_cur {
 }
 
 clean_maildir_cur($dir->child('cur'));
-save_json($config->{index_json}, $idx);
+save_json($idx_file, $idx);
 
 {
   my $folder = $config->{target_label};
@@ -282,8 +280,9 @@ save_json($config->{index_json}, $idx);
     }
 
     my $md5 = md5_hex($raw);
-    my $cur_target = $dir->child('cur', canonical_mail_filename($md5));
-    my $new_target = $dir->child('new', canonical_mail_filename($md5));
+    my $base = canonical_mail_filename($md5);
+    my $cur_target = $dir->child('cur', $base);
+    my $new_target = $dir->child('new', $base);
 
     my $h = parse_headers_from_raw($raw);
     my $mid = $h->{'message-id'};
@@ -315,12 +314,13 @@ save_json($config->{index_json}, $idx);
       subject => $h->{subject},
     };
     $idx->{uids}{$uid} = $mid;
-
+    save_json($idx_file, $idx);
     $added++;
     log_msg("Downloaded $added new unique messages (staged in new/).");
+    last if $added > 250;
   }
 
-  save_json($config->{index_json}, $idx);
+  save_json($idx_file, $idx);
 
   clean_maildir_cur($dir->child('cur'));
 
@@ -352,7 +352,7 @@ save_json($config->{index_json}, $idx);
   }
 
   clean_maildir_cur($dir->child('cur'));
-  save_json($config->{index_json}, $idx);
+  save_json($idx_file, $idx);
 
   log_msg("Sync complete. $added new unique messages downloaded; $promoted promoted into cur/.");
 }
