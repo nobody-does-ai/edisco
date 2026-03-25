@@ -90,7 +90,13 @@ export const handleTurn = async (
     });
 
     if (!response.ok) {
-      console.error(`Error: ${response.status} - ${response.statusText}`);
+      const errText = `API error: ${response.status} - ${response.statusText}`;
+      console.error(errText);
+      fetch("/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "system", content: errText, metadata: { type: "error" } }] }),
+      }).catch(() => {});
       return;
     }
 
@@ -131,7 +137,13 @@ export const handleTurn = async (
       }
     }
   } catch (error) {
-    console.error("Error handling turn:", error);
+    const errText = `Turn error: ${error instanceof Error ? error.message : String(error)}`;
+    console.error(errText);
+    fetch("/api/conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "system", content: errText, metadata: { type: "error" } }] }),
+    }).catch(() => {});
   }
 };
 
@@ -508,6 +520,17 @@ export const processMessages = async () => {
         case "response.completed": {
           console.log("response completed", data);
           const { response } = data;
+
+          // Save assistant response to postgres
+          if (assistantMessageContent) {
+            fetch("/api/conversation", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                messages: [{ role: "assistant", content: assistantMessageContent }],
+              }),
+            }).catch((err) => console.error("Error saving assistant message:", err));
+          }
 
           // Handle MCP tools list (append all lists, not just the first)
           const mcpListToolsMessages = response.output.filter(
