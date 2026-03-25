@@ -1,0 +1,12 @@
+png
+tsv
+dat
+pdf
+*.html
+arc
+trace.pg
+/tsv.sql
+.exrc
+doit
+dump*
+gather

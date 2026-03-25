@@ -1,0 +1,23 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+# Header installed by /opt/bin/mkperl
+open(STDIN,"<","/dev/null");
+open(STDIN,"-|","find mail/???/ -type f");
+while(<STDIN>){
+  chomp;
+  open(my $file,"<",$_) or next;
+  while(<$file>){
+    last unless /\S/;
+    print;
+  };
+  close($file);
+};
+close(STDIN);

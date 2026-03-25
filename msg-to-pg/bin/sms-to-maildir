@@ -1,509 +1,507 @@
 #!/usr/bin/env perl
+# sms-to-maildir -- convert SMS Backup & Restore XML to a plain-text Maildir
+#
+# Filters to messages involving the wanted area codes (default: 734, 603).
+# Phone numbers are normalized to bare 10 digits (NPA-NXX-XXXX, no punctuation)
+# and become user@sms.org addresses.
+# All output is plain RFC 2822 -- no MIME, no inline base64.
+# Binary attachments are decoded to smsdir/inc/<md5>.<ext> (content-addressed;
+# duplicates are hard-linked) and referenced via X-Attachment: headers.
+#
+# Configuration -- edit %opt to change behaviour:
+
 use common::sense;
 use Nobody::Util;
-use Time::HiRes qw( time );
-use Encode qw(encode_utf8);
-use utf8;
-use Getopt::Long qw(GetOptions);
 use XML::LibXML::Simple qw(XMLin);
-use Digest::MD5 qw(md5_hex);
 use POSIX qw(strftime);
-use Mojo::DOM;
-use JSON::XS qw(encode_json decode_json);
-$|++;
-sub say {
-  print "@_\n";
+use MIME::Base64 qw(decode_base64);
+use Digest::MD5 qw(md5_hex);
+use JSON::XS qw( encode_json decode_json );
+
+my %filt; 
+for( qw( 
+7343551065 7346461004 7346656622 6038651077
+7343551065 6038031699 7342726715 7342726715 7343551065 7346461004
+7342726715 7346461004
+)) {
+$filt{$_}++;
+};
+sub fr_addr;
+sub to_addr;
+sub date;
+our(@parts,@part,$part,$parts,%parts);
+sub body {
+  return $_->{mms_body} if defined $_->{mms_body};
+  return $_->{body} if defined $_->{body};
+  $DB::single=1;
+  for(@{$_->{attach}}){
+      eex($_);
+  };
+  die "failed to find text";
+};
+sub parts {
+  my($msg)=shift;
+  return {} unless defined $msg->{parts};
+  local(@_)=@{delete $msg->{parts}};
+  for(keys @_){
+    if(defined($_[$_]->{part})) {
+      splice(@_,$_,1,@{$_[$_]->{part}});
+    };
+  };
+  return @_;
+};
+{
+  package Msg;
+  use Nobody::Util;
+  sub new {
+    local(@_)=@_;
+    my($class)=class(shift);
+    our(%data);
+    local(*data)=shift;
+    my($self)={};
+    $self->{date}=main::date(\%data);
+    $self->{fr}=main::fr_addr(\%data);
+    $self->{to}=main::to_addr(\%data);
+    return undef unless $filt{$self->{fr}} or $filt{$self->{to}};
+    my(%attach);
+    tie %attach,'MultiHash';
+    $self->{attach}=\%attach;
+    %{$self->{attach}}=%{main::parts(\%data)};
+    $self->{body}=main::body(\%data);
+    eex($self);
+    bless($self,$class);
+    $self;
+  };
+  sub to {
+    return $_[0]->{to};
+  };
+  sub fr {
+    return $_[0]->{fr};
+  };
+  sub body {
+    return $_[0]->{body};
+  };
+  sub date {
+    return $_[0]->{date};
+  };
+  sub attach {
+    return $_[0]->{attach};
+  };
 };
 my %opt = (
-  in      => "sms.xml",
-  maildir => "smsdir",
-  me      => 'me@sms',
-  domain  => 'sms',
+  maildir => "mail",
+  domain  => 'sms.org',
+  me      => '6034000820,6037573283,6037620273',
+  areas   => '734,603',
 );
-print STDERR pp(\%opt),"\n";
-my $maildir = path($opt{maildir});
-my $attdir = $maildir->child('att');
-$attdir->mkpath;
-my($mms_cnt)=0;
-my($mms_snd)=0;
-my(@hdr);
-my($tot_cnt)=0;
-use Carp qw( croak confess carp cluck );
+
+my @me_numbers  = split /,/, $opt{me};
+my @keep_areas  = split /,/, $opt{areas};
+my %is_me       = map { $_ => 1 } @me_numbers;
+
+# ------------------------------------------------------------------ helpers --
+my(%norm);
 END {
-  path("hdr.log")->spew(pp(\@hdr));
+  my($norm)=encode_json(\%norm);
+  path("norm.json")->spew($norm);
 };
-sub Path::Tiny::md5slurp {
-  my($path)=shift;
-  my($hash)=shift;
-  if(length($hash)!=32 or $hash!~m{^[0-9a-f]+$}) {
-    die "invalid hash";
+sub normalize {
+  # Collapse any phone number to bare 10 digits.
+  # Handles: +16035551234  16035551234  (603)555-1234  603.555.1234  etc.
+  my($i,$o);
+  local ($_) = @_;
+  $i="$_";
+  if(defined($_)){
+    s/[^\d]//g;          # strip everything non-digit
+    s/^1(\d{10})$/$1/;   # strip leading country code 1 if present
+  } else {
+    $_="";
   };
-  my($file)=$path->child($hash);
-  my $text=$file->slurp;
-  die "hash-mismatch" unless md5_str($text);
-  return $text;
+  #$_='' unless 10==length;
+  $o="$_";
+  $norm{$i}=$o;
+}
+sub fr_addr {
+  my($a);
+  if(defined($a=$_[0]->{mms_addresses})){
+    for(@$a){
+      next unless $_->{type}==137;
+      $a=normalize($_->{address}) ;
+      return $a;
+    }; 
+  } elsif( $_->{type}==1 ) {
+    return normalize($_[0]->{address});
+  } else {
+    return "16034000820";
+  };
 };
-exit(main(@ARGV));
-die "NONE SHALL PASS!";
-sub rfc2822_date_from_ms {
-  my ($ms) = @_;
-  $ms ||= 0;
-  my $t = int($ms / 1000);
-  return serdate($t);
-#      return strftime("%a, %d %b %Y %H:%M:%S %z", localtime($t));
+sub to_addr {
+  my($a);
+  if(defined($a=$_[0]->{mms_addresses})){
+    for(@$a){
+      next unless $_->{type}==151;
+      $a=normalize($_->{address}) ;
+      return $a;
+    }; 
+  } elsif( $_->{type}==2 ) {
+    return normalize($_[0]->{address});
+  } else {
+    return "16034000820";
+  };
+};
+
+sub is_me       { $is_me{ normalize($_[0]) // '' } }
+sub is_wanted   {
+  my $n = normalize($_[0]);
+  return 0 unless length($n) == 10;
+  my $area = substr($n, 0, 3);
+  return 1 if $filt{$n};
+  return 0;
+  #  return grep { $_ eq $area } @keep_areas;
 }
-sub safe_maildir_name {
-  my ($ms,$type) = @_;
-  confess unless defined ${type};
-  my($res)=join(".",$ms,$type,$opt{domain});
-  #eex( [$ms,$type,$res] );
-  return $res;
+sub phone_addr {
+  my ($raw, $label) = @_;
+  return normalize($raw);
+}
+#    sub phone_addr {
+#      # Return a bare RFC 2822 address for a normalized number, with optional label.
+#      my ($raw, $label) = @_;
+#      my $n = normalize($raw);
+#      $label //= $n;
+#      $label = $n if $label eq '' || $label eq '(Unknown)';
+#      my ($res)=qq{"$label" <$n\@$opt{domain}>};
+#      open(my $addr,">>addr.list");
+#      $addr->say($res);
+#      close($addr);
+#      return $res;
+#    }
+
+sub me_addr { qq{"me" <} . $me_numbers[0] . qq{\@$opt{domain}>} }
+
+# Map MMS content-types to file extensions.
+my %CT_EXT = (
+  'image/jpeg'      => 'jpg',
+  'image/jpg'       => 'jpg',
+  'image/png'       => 'png',
+  'image/gif'       => 'gif',
+  'image/webp'      => 'webp',
+  'image/bmp'       => 'bmp',
+  'image/tiff'      => 'tif',
+  'video/mp4'       => 'mp4',
+  'video/3gpp'      => '3gp',
+  'video/3gpp2'     => '3g2',
+  'video/quicktime' => 'mov',
+  'video/webm'      => 'webm',
+  'audio/mpeg'      => 'mp3',
+  'audio/mp4'       => 'm4a',
+  'audio/amr'       => 'amr',
+  'audio/ogg'       => 'ogg',
+  'audio/wav'       => 'wav',
+  'application/pdf' => 'pdf',
+  'text/vcard'      => 'vcf',
+  'text/x-vcard'    => 'vcf',
+);
+
+sub ct_ext {
+  my ($ct) = @_;
+  $ct = lc($ct // '');
+  $ct =~ s/;.*//;   # strip parameters like "; charset=utf-8"
+  $ct =~ s/\s+//g;
+  return $CT_EXT{$ct} // 'bin';
 }
 
-sub write_maildir_message {
-  my (%m) = @_;
-  confess unless length $m{type};
-  my $fn  = safe_maildir_name($m{date_ms},$m{type});
-  my $tmp = $maildir->child('tmp')->mkdir->child($fn);
-  my $new = $maildir->child('new')->mkdir->child($fn);
-  $tmp->spew_utf8($m{raw});
-  $tmp->move($new);
-}
-
-sub mk_addr {
-  my ($label, $kind) = @_;
-  $label ||= $opt{me};
-  $label =~ s/^\s+|\s+$//g;
-
-  # Phone-ish -> sms+NNN@domain
-  if ($label =~ /^\+?\d[\d\-\s\(\)]+$/) {
-    (my $norm = $label) =~ s/[^\d\+]+//g;
-    $norm =~ s/^\+//;
-    return qq{"$label" <sms+$norm\@$opt{domain}>};
+# Save a binary attachment to inc/<md5>.<ext>; hard-link if already present.
+# Returns the bare filename, or undef if data is absent/null.
+sub save_attachment {
+  my ($incdir, $ct, $b64) = @_;
+  return undef unless defined $b64 && $b64 ne '' && $b64 ne 'null';
+  my $bytes = decode_base64($b64);
+  return undef unless length($bytes);
+  my $md5  = md5_hex($bytes);
+  my $ext  = ct_ext($ct);
+  my $fn   = "$md5.$ext";
+  my $dest = $incdir->child($fn);
+  unless (-e $dest) {
+    # Write to a temp file first, then rename atomically.
+    my $tmp = $incdir->child("$fn.tmp");
+    $tmp->spew_raw($bytes);
+    $tmp->move($dest);
   }
-
-  # Already email-ish
-  return qq{"$label" <$label>} if $label =~ /\@/;
-
-  # Fallback
-  return qq{"$label" <$kind\@$opt{domain}>};
+  return $fn;
 }
 
-sub emit_plain_email {
-  my (%m) = @_;
-  my $date = rfc2822_date_from_ms($m{date_ms});
-  my $mid  = sprintf("<%s\@%s>", $m{date_ms}, $opt{domain});
+sub rfc2822 {
+  my ($ms) = @_;
+  return strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime(int(($ms||0)/1000)));
+}
 
+sub emit_email {
+  my (%m) = @_;
   my $body = $m{body} // '';
   $body =~ s/\r\n/\n/g;
   $body =~ s/\r/\n/g;
-
+  $body =~ s/\n+$//;
+  $body .= "\n";
   my @h;
-  push(@h,"From: $m{from}") if defined $m{from};
-  push(@h,"To: $m{to}") if defined $m{to};
-  push(@h,"CC: $m{cc}") if defined $m{cc};
-  push(@h,"Date: $date");
-  push(@h,"Message-Id: $mid");
-  push(@h,"Subject: $m{subject}") if defined $m{subject};
-  push @h, @{$m{x_headers}} if $m{x_headers};
-
-  return join("\n", @h, "", $body, "");
+  push @h, "From: $m{from}"       if defined $m{from};
+  push @h, "To: $m{to}"           if defined $m{to};
+  push @h, "CC: $m{cc}"           if defined $m{cc};
+  push @h, "Date: $m{date}";
+  push @h, "Message-Id: $m{mid}";
+  push @h, "Subject: $m{subject}" if defined $m{subject};
+  push @h, @{ $m{xhdrs} }         if $m{xhdrs};
+  return join("\n", @h, "", $body);
 }
 
-sub ext_from_ct {
-  my ($ct) = @_;
-  return 'jpg'  if $ct =~ m{^image/jpeg}i;
-  return 'png'  if $ct =~ m{^image/png}i;
-  return 'gif'  if $ct =~ m{^image/gif}i;
-  return 'webp' if $ct =~ m{^image/webp}i;
-  return 'mp4'  if $ct =~ m{^video/mp4}i;
-  return '3gp'  if $ct =~ m{^video/3gpp}i;
-  return 'vcf'  if $ct =~ m{vcard}i;
-  return 'smil' if $ct =~ m{smil}i;
-  return 'txt'  if $ct =~ m{^text/}i;
-  return 'bin';
+sub write_message {
+  my ($maildir, $ms, $type, $mtype, $raw) = @_;
+  # Include m_type in filename to avoid collisions between delivery-receipt
+  # shells (m_type=128) and the actual message record (m_type=132) that can
+  # share the same millisecond timestamp.
+  my $fn  = join('.', $ms, $type, $mtype, $opt{domain});
+  my $tmp = $maildir->child('tmp')->mkdir->child($fn);
+  my $new = $maildir->child('new')->mkdir->child($fn);
+  $maildir->child('cur')->mkdir;
+  $tmp->spew_utf8($raw);
+  $tmp->move($new);
 }
 
-# Minimal base64 decode (no extra deps). Good enough.
-sub b64_decode {
-  my ($s) = @_;
-  return '' unless defined $s && $s ne '';
-  $s =~ s/\s+//g;
-  my %t; my $i=0;
-  $t{$_} = $i++ for ('A'..'Z','a'..'z',0..9,'+','/');
-  my $out = '';
-  my @c = split //, $s;
-  while (@c) {
-    my $a = shift @c; my $b = shift @c; my $c1 = shift @c; my $d = shift @c;
-    last unless defined $d;
-    my $pa = ($a eq '=') ? 0 : $t{$a};
-    my $pb = ($b eq '=') ? 0 : $t{$b};
-    my $pc = ($c1 eq '=') ? 0 : $t{$c1};
-    my $pd = ($d eq '=') ? 0 : $t{$d};
-    my $n  = ($pa<<18) | ($pb<<12) | ($pc<<6) | $pd;
-    $out  .= chr(($n>>16)&255);
-    $out  .= chr(($n>>8)&255)  if $c1 ne '=';
-    $out  .= chr($n&255)       if $d  ne '=';
-  }
-  return $out;
-}
+# ----------------------------------------------------------------- SMS loop --
 
-sub save_attachment_blob {
-  my (%a) = @_;
-  my $tag = $a{date_ms};
-  my $ext = $a{ext} || 'bin';
-  my $fn  = "att.$tag.$ext";
-  my $p   = $attdir->child($fn);
-  return 0 if($p->exists);
-  if (defined $a{bytes} && length $a{bytes}) {
-    my $bytes = 
-    $p->spew_raw(b64_decode($a{bytes}));
-    return 1;
-  }
-  if (defined $a{text} && $a{text} ne '') {
-    $p->spew_utf8($a{text});
-    return 1;
-  }
-  return 0;
-}
+sub handle_sms {
+  my ($maildir, $sms_list) = @_;
+  my $written = 0;
 
-sub html_to_text {
-  my ($html) = @_;
-  return '' unless defined $html && $html ne '';
-  my $dom = Mojo::DOM->new($html);
-  my $t = $dom->all_text // '';
+  for my $sms (@$sms_list) {
+    my $raw_addr = $sms->{address} // '';
+    next if $raw_addr =~ /\@/;
+    next unless is_wanted($raw_addr);
 
-  $t =~ s/\r\n/\n/g;
-  $t =~ s/\r/\n/g;
-  $t =~ s/[ \t]+\n/\n/g;
-  $t =~ s/\n{3,}/\n\n/g;
-  return $t;
-};
-sub do_sms(@) {
-  local(@_)=@_;
-  for my $sms (@_) {
-    local($_) = $sms->{'address'};
-    my $date = $sms->{'date'};
-    my $type = $sms->{'type'};
-    my $body = $sms->{'body'};
-    die if m{~};
-    if(9>length) {
-      next;
-    } elsif( m{\@} ) {
-      next;
-    } else {
-      next unless m{734};
-      s{^[+1]+}{};
-    };
+    my $norm    = normalize($raw_addr);
+    my $date_ms = $sms->{date}  // 0;
+    my $type    = $sms->{type}  // 0;   # 1=inbox 2=sent
+    my $body    = $sms->{body}  // '';
+    my $contact = $sms->{contact_name} // '';
+    $contact = '' if $contact eq '(Unknown)';
+
     my ($from, $to, $subj);
-    if ($type == 1) { # inbox
-      $from = mk_addr($_, 'sms');
-      $to   = mk_addr($opt{me}, 'me');
-    } elsif ($type == 2) { # sent
-      $from = mk_addr($opt{me}, 'me');
-      $to   = mk_addr($_, 'sms');
+    if ($type == 1) {
+      $from = phone_addr($norm, $contact);
+      $to   = me_addr();
+      $subj = "SMS from " . ($contact || $norm);
     } else {
-      $from = mk_addr($_, 'sms');
-      $to   = mk_addr($opt{me}, 'me');
-      die "from: $from to: $to";
+      $from = me_addr();
+      $to   = phone_addr($norm, $contact);
+      $subj = "SMS to " . ($contact || $norm);
     }
-    $subj = "SMS ($type) $_";
-    my @xh = (
-      "X-SMS-Address: $_",
-      "X-SMS-Type: $type",
-      "X-SMS-Date-MS: $date",
+
+    my $raw = emit_email(
+      from    => $from,
+      to      => $to,
+      date    => rfc2822($date_ms),
+      mid     => sprintf("<%s.sms\@%s>", $date_ms, $opt{domain}),
+      subject => $subj,
+      body    => $body,
+      xhdrs   => [
+        "X-SMS-Address: $norm",
+        "X-SMS-Type: $type",
+        "X-SMS-Date-MS: $date_ms",
+      ],
     );
-    my $raw = emit_plain_email(
-      date_ms   => $date,
-      from      => $from,
-      to        => $to,
-      subject   => $subj,
-      body      => $body,
-      x_headers => \@xh,
-    );
-    write_maildir_message(date_ms => $date, raw => $raw, type=>'sms');
+
+    write_message($maildir, $date_ms, 'sms', 0, $raw);
+    $written++;
   }
-};
-sub do_mms {
-  for my $mms (@_) {
-    local($_)    = $mms->{'address'};
-    my $date    = $mms->{'date'};
-    my $msg_box = $mms->{'msg_box'};
-    my $subj0   = $mms->{'sub'};
-    my ($from, $to, $subj,$cc);
-     
-    if ($msg_box == 1) { # inbox
-      local($_,@_)=split(m{~});
-      $_=shift if m{603};
-      $from = mk_addr($_, 'mms');
-      $to   = mk_addr($opt{me}, 'me');
-      $cc   = mk_addr(shift, 'mms') if @_;
-      $subj = $subj0 if length $subj0;
-    } elsif ($msg_box == 2) { # sent
-      $from = mk_addr($opt{me}, 'me');
-      #eex $from;
-      local($_,@_)=split(m{~});
-      $to   = mk_addr($_, 'mms');
-      if(@_) {
-        $cc = mk_addr(shift,'mms');
-      };
-      
-      $subj = ($subj0 ne '' ? $subj0 : "MMS to $_");
-    } else {
-      die if m{~};
-      $from = mk_addr($_, 'mms');
-      die if $from =~ m{~};
-      #seex $from;
-      $to   = mk_addr($opt{me}, 'me');
-      $subj = ($subj0 ne '' ? $subj0 : "MMS ($msg_box) $_");
+  return $written;
+}
+
+# ----------------------------------------------------------------- MMS loop --
+
+sub handle_mms {
+  my ($maildir, $mms_list) = @_;
+  my $written = 0;
+
+  for my $mms (@$mms_list) {
+    my $raw_addr = $mms->{address} // '';
+    next if $raw_addr =~ /\@rcs\.google\.com/;
+    next if $raw_addr =~ /\@/;
+
+    my $date_ms = $mms->{date}    // 0;
+    my $msg_box = $mms->{msg_box} // 0;   # 1=inbox 2=sent
+    my $contact = $mms->{contact_name} // '';
+    $contact = '' if $contact eq '(Unknown)';
+
+    # Build participant list from <addrs><addr ...> entries.
+    # XMLin gives us: addrs => [ { addr => [ {address=>..., type=>...}, ... ] } ]
+    my @parts;
+    if (ref $mms->{addrs} eq 'ARRAY') {
+      for my $ag (@{ $mms->{addrs} }) {
+        next unless ref $ag eq 'HASH' && ref $ag->{addr} eq 'ARRAY';
+        for my $a (@{ $ag->{addr} }) {
+          next unless ref $a eq 'HASH';
+          my $n = normalize($a->{address} // '');
+          next unless length($n) == 10;
+          push @parts, { norm => $n, type => ($a->{type} // '') };
+        }
+      }
     }
-    next if $from =~ m{\@rcs.google.com};
-    next if $to =~ m{\@rcs.google.com};
-
-    my @xh = (
-      "X-MMS-Address: $_",
-      "X-MMS-Msg-Box: $msg_box",
-      "X-MMS-Date-MS: $date",
-    );
-
-    my $text_plain = '';
-    my $text_html  = '';
-
-    my $att_count = 0;
-    my @part_summaries;
-    for my $part (@{$mms->{parts}}) {
-      my $ct = $part->{'ct'} // '';
-    
-      # Collect text bodies
-      if ($ct eq 'text/plain') {
-        my $t = $part->{'text'} // '';
-        $text_plain .= ($text_plain eq '' ? '' : "\n\n") . $t if $t ne '';
-        next;
+    # Fall back to tilde-separated top-level address
+    unless (@parts) {
+      for my $a (split /~/, $raw_addr) {
+        my $n = normalize($a);
+        push @parts, { norm => $n, type => '' } if length($n) == 10;
       }
-      if ($ct eq 'text/html') {
-        my $h = $part->{'text'} // '';
-        $text_html .= ($text_html eq '' ? '' : "\n\n") . $h if $h ne '';
-        next;
-      }
-
-      # Summarize part for no-text cases (and for debugging)
-      my $name = $part->{'name'}
-      // $part->{'filename'}
-      // $part->{'fn'}
-      // '';
-      my $sz   = $part->{'data_size'}
-      // $part->{'size'}
-      // '';
-
-      my $sum = ($ct ne '' ? $ct : 'unknown/unknown');
-      $sum .= " name=$name" if $name ne '';
-      $sum .= " size=$sz"   if $sz ne '';
-      push @part_summaries, $sum;
-
-      # Save attachments (best effort)
-      my $data_b64 = $part->{'data'}; # typically base64 for binary
-      my $text     = $part->{'text'}; # sometimes textual payload
-      my $ext      = ext_from_ct($ct);
-
-      my $saved = 0;
-      if (defined($data_b64) && $data_b64 ne '') {
-        $saved = save_attachment_blob(date_ms => $date, ext => $ext, bytes => $data_b64);
-      } else {
-        $saved = save_attachment_blob(date_ms => $date, ext => $ext, text => $text);
-      }
-
-      $att_count++ if $saved;
     }
 
-    # Build the grep-friendly body
+    # Must have at least one wanted non-self participant
+    my @others = grep { !$is_me{$_->{norm}} } @parts;
+    next unless grep { is_wanted($_->{norm}) } @others;
+
+    # Extract text and binary attachments from parts.
+    # XMLin: parts => [ { part => [ {ct=>..., text=>..., data=>...}, ... ] } ]
+    my $incdir = $maildir->child('inc')->mkdir;
     my $body = '';
+    my @att_files;   # bare filenames in inc/
+    for my $pg (@{ $mms->{parts} // [] }) {
+      next unless ref $pg eq 'HASH';
+      my $plist = ref $pg->{part} eq 'ARRAY' ? $pg->{part} : [];
+      for my $part (@$plist) {
+        next unless ref $part eq 'HASH';
+        my $ct   = $part->{ct}   // '';
+        my $text = $part->{text} // '';
+        $text = '' if $text eq 'null';
+        my $data = $part->{data} // '';
+        $data = '' if $data eq 'null';
+        if ($ct eq 'text/plain' && $text ne '') {
+          $body .= ($body eq '' ? '' : "\n\n") . $text;
+        } elsif ($ct =~ m{application/smil}i) {
+          # discard -- layout wrapper only
+        } elsif ($ct =~ m{text/}i) {
+          # other text subtypes: treat as body if non-empty
+          $body .= ($body eq '' ? '' : "\n\n") . $text if $text ne '';
+        } elsif ($data ne '') {
+          my $fn = save_attachment($incdir, $ct, $data);
+          push @att_files, $fn if defined $fn;
+        }
+      }
+    }
+    # Skip entirely if there is nothing to say -- these are typically
+    # delivery-receipt shells (m_type=128) that duplicate a real message.
+    next if $body eq '' && !@att_files;
 
-    if ($text_plain ne '') {
-      $body = $text_plain;
-    }
-    elsif ($text_html ne '') {
-      my $txt = html_to_text($text_html);
-      $body  = "[MMS: html body]\n\n";
-      $body .= ($txt ne '' ? $txt : "(html present, but produced no text)") . "\n";
-      $body .= "\n----BEGIN HTML----\n$text_html\n----END HTML----\n";
-    }
-    else {
-      $body  = "[MMS: no text content]\n";
-      $body .= "Parts:\n";
-      if (@part_summaries) {
-        $body .= join("", map { "  - $_\n" } @part_summaries);
-      } else {
-        $body .= "  - (no parts metadata)\n";
+    # Build From/To/CC
+    my $primary = $others[0]{norm};
+    my $label   = $contact ne '' ? $contact : $primary;
+
+    my ($from, $to, $cc);
+    if ($msg_box == 2) {
+      $from = me_addr();
+      $to   = phone_addr($primary, $label);
+      if (@others > 1) {
+        $cc = join(', ', map { phone_addr($_->{norm}) } @others[1..$#others]);
+      }
+    } else {
+      $from = phone_addr($primary, $label);
+      $to   = me_addr();
+      if (@others > 1) {
+        $cc = join(', ', map { phone_addr($_->{norm}) } @others[1..$#others]);
       }
     }
 
-    if ($att_count) {
-      $body .= "\n[Attachments saved: $att_count]\n";
-    }
-    next;
-    my $raw = emit_plain_email(
-      date_ms   => $date,
-      from      => $from,
-      to        => $to,
-      subject   => $subj,
-      body      => $body,
-      type      => "mms",
-      x_headers => \@xh,
-      type => "mms",
+    my $subj = ($msg_box == 2 ? "MMS to " : "MMS from ") . $label;
+
+    my $raw = emit_email(
+      from    => $from,
+      to      => $to,
+      (defined $cc ? (cc => $cc) : ()),
+      date    => rfc2822($date_ms),
+      mid     => sprintf("<%s.mms\@%s>", $date_ms, $opt{domain}),
+      subject => $subj,
+      body    => $body,
+      xhdrs   => [
+        "X-MMS-Address: $raw_addr",
+        "X-MMS-Msg-Box: $msg_box",
+        "X-MMS-Date-MS: $date_ms",
+        "X-MMS-Type: " . ($mms->{m_type} // ''),
+        (map { "X-Attachment: $_" } @att_files),
+      ],
     );
 
-    write_maildir_message(date_ms => $date, raw => $raw, type=> 'mms');
+    my $mtype = $mms->{m_type} // 0;
+    write_message($maildir, $date_ms, 'mms', $mtype, $raw);
+    $written++;
   }
+  return $written;
 }
-use Path::Tiny;
-sub Path::Tiny::ext {
-  local($_)=shift;
-  my($dir)=$_->parent;
-  my($oext)=m{([.][^/.]+)$};
-  my($next)=shift;
-  s{^[.]}{} for $next;
-  my($base)=$_->basename($oext);
-  my($path)=path("$dir/$base.$next");
-  $path;
-};
-sub clean {
-  local(@_)=shift;
-  while(@_) {
-    local($_)=shift;
-    if(ref($_)eq'REF'){
-      $_=$$_;
-    };
-    if(ref($_)eq'HASH'){
-      my($hash)=$_;
-      for(keys %$hash) {
-        next if defined($_) and $_ ne 'null';
-        delete $hash->{$_};
-      };
-      push(@_,map { \$_ } values %$_);
-    } elsif (ref($_)eq'ARRAY') {
-      push(@_,map { \$_ } @$_);
-    } elsif (ref($_)eq'SCALAR') {
-    }
-  };
-};
-my(%n);
-sub rconvert {
-  my($n)=shift;
-  my($a)=refaddr($n);
-  $n{$a}=[$n];
-  for($n->childNodes()){
-    if(ref($_) ne "XML::LibXML::Text"){
-      push(@{$n{$a}},refaddr($_));
-      rconvert($_);
-    };
-  };
-};
-my(%skip);
-BEGIN {
-  $skip{data}=1;
-  $skip{creator}=1;
-  $skip{protocol}=1;
-  $skip{status}=1;
-  $skip{date_sent}=1;
-  $skip{exp}=1;
-  $skip{locked}=1;
-  $skip{m_cls}=1;
-  $skip{read}=1;
-  $skip{seen}=1;
-  $skip{rr}=1;
-  $skip{tr_id}=1;
-  $skip{readable_date}=1;
-};
-my(%counts);
-END {
-  eex(\%counts);
-};
-our(%self);
-our(%seen);
-sub convert {
-  local($_)=shift;
-  local(*self)=shift;
-  for($_->attributes()) {
-    my($n,$v)=($_->getName(),$_->getValue());
-    next if $v eq "null";
-    next if $v eq "(Unknown)";
-    next if $v =~ m{^proto:};
-    next if $skip{$n};
-    $self{$n}=$v;
-  };
-  for($_->childNodes()){
-    local(@_)=split m{::}, ref;
-    next if $_[$#_] eq "Text";
-    next if $_[$#_] eq "Comment";
-    my($nodeName)=$_->nodeName();
-    die "conflict" unless ref($self{$nodeName}//=[]) eq 'ARRAY';
-    push(@{$self{$nodeName}},convert($_,{}));
-  };
-  for my $s(qw(part addr)) {
-    my($p)="${s}s";
-    if(exists $self{$p}){
-      if(%{$self{$p}[0]}) {
-        die pp(\%self) unless exists $self{$p}[0]{$s};
-        $self{$p}=$self{$p}[0]{$s};
-        delete $counts{$s};
-      } else {
-        delete $self{$p};
-      };
-    };
-  };
-  for(keys %self) {
-    $counts{$_}{0+@{$self{$_}}}++ if ref($self{$_}) eq 'ARRAY';
-  };
-  \%self;
-};
-my(%addr);
-END {
-  eex(\%addr);
-};
-my (%doc);
-sub main {
-  my($coder)=JSON::XS->new()->pretty(1);
-  GetOptions(
-    'in=s'      => \$opt{in},
-    'maildir=s' => \$opt{maildir},
-    'me=s'      => \$opt{me},
-    'domain=s'  => \$opt{domain},
-  ) or die "usage: $0 --in sms.xml --maildir /path/to/Maildir [--me me\@local] [--domain local]\n";
 
-  for my $in(map { path($_) } glob("xml/sms-*.xml")) {
-    next if -e "$in.xml";
-#        my(@files);
-    for (qw(tmp new cur)) {
-      local($_)=[$_,$maildir->child($_)->mkdir];
-      next if($_->[0] eq 'tmp');
-      $_=$_->[1];
-    }
-    my $parser = XML::LibXML->new( recover => 1, no_network => 1, huge=>1, ForceArray=>1);
-    my @lines=path($in)->lines;
-    $_="";
-    $DB::single=1;
-    my($doc)=$parser->load_xml(string=>join("",@lines));
-    convert($doc,\%doc);
-    $doc=\%doc;
-    @_=grep { $_->{address} =~ /^[1+]*734/ } map { @{$_->{sms}}, @{$_->{mms}} } @{$doc->{smses}};
-    say scalar(@_);
-    for my $msg(@_) {
-      $_=$msg->{address};
-      for(split m{~}) {
-        push(@{$addr{$_}},$msg);
-      };
+our %msg;
+my($stime);
+BEGIN {
+  $stime=time;
+};
+sub date {
+  my($date)=$_[0]->{date};
+  $date=int($date/1000) if($date>$stime);
+  die unless defined $date;
+  serdate($date);
+};
+our(@msg);
+sub main {
+  my $maildir = path($opt{maildir});
+  $maildir->mkdir;
+  my @inputs=(glob('xml/sms-*.xml'));
+  for my $infile (@inputs) {
+    my $abs = path($infile)->realpath;
+    warn "Parsing $abs ...\n";
+    use XML::LibXML;
+    use XML::LibXML::Simple qw(XMLin);
+
+    my $parser = XML::LibXML->new(huge => 1);
+    my $doc    = $parser->parse_file($abs);
+    
+    my $data = XMLin(
+      $doc,
+      KeepRoot   => 1,
+      KeyAttr    => [],
+      ForceArray => [qw( sms mms part addr parts addrs )],
+    );
+    my $root = $data->{smses} or die "Expected <smses> root in $abs\n";
+    for(@{$root->{sms}},@{$root->{mms}}){
+      my($msg)=Msg->new($_);
+      next unless defined $msg;
+      $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
     };
-#        eex( keys %$doc );
-#        my(@sms)=@{$doc->{sms}};
-#        say 0+@sms;
-#        my(@mms)=@{$doc->{mms}};
-#        say 0+@mms;
-#        #eex( scalar(@sms), scalar(@mms) );
-#        clean($_) for @sms,@mms;
-#        do_sms($_) for(@sms);
-#        do_mms($_) for(@mms);
+    eex( { msgs=>0+(keys %msg) } );
   }
-  eex "Done.";
-  eex "Maildir: $maildir";
-  eex "Attachments dir: $attdir";
+  for my $infile( glob("json/*.json")) {
+    warn "Parsing $infile ...\n";
+    my $data = decode_json(path($infile)->slurp);
+    for(@$data){
+      $_->{archived}=join("",$_->{archived});
+      my($msg)=Msg->new($_);
+      next unless defined $msg;
+      $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
+    };
+  };
+  eex(\%msg);
+  exit(0);
+  my($total_sms)=0;
+  my($total_mms)=0;
+  our(@msg);
+  for my $date(sort keys %msg) {
+    local(*msg)=$msg{$date};
+    say "date: ", $date;
+    say refaddr(\%msg);
+    for my $fr_addr(sort keys %msg) {
+      local(*msg)=$msg{$fr_addr};
+      for my $to_addr(sort keys %msg) {
+        local(*msg)=$msg{$to_addr};
+        next unless $filt{fr_addr(\%msg)} or $filt{to_addr(\%msg)};
+        eex(\%msg);
+      }
+    }
+  };
+  path("msgs.json")->spew(join("\n",@msg));
+  warn "Done. SMS=$total_sms MMS=$total_mms  Maildir=$opt{maildir}\n";
 }
+main();

@@ -6,157 +6,63 @@ $|++;
 use lib "lib";
 use common::sense;
 use autodie;
-use Nobody::Util;
-use Nobody::PP;
-use TsvUtil qw(vert_sort);
-use TsvDB;
-use GD::Image;
-use GDUtil;
-our(@VERSION) = qw( 0 1 0 );
+use Nobody::Util qw(path);
+use JSON::PP;
 
-sub main;
-main(@ARGV);
-exit(0);
-use TsvLine;
-my(%tgt);
-my(@inv,@trn);
-$|++;
+my($out_dir)=path("html")->mkdir;
 
-sub nsort {
-  sort { $a <=> $b } @_;
-};
-sub main {
-  my(@tsv)=map { path($_) } glob("tsv/202?-Q?-???.tsv");
-  my($res)=TsvDB::hash_fetch("select * from tsv_range order by rid, tsv");
-  my(%r);
-  for(@$res) {
-    my($rid)=$_->{rid};
-    push(@{$r{$rid}},$_);
-  };
-  
-  for(sort { $a<=>$b } keys %r) {
-    my(@word)=TsvWord->from(@{$r{$_}});
-    my(@line)=TsvLine->from(@word);
-    if($line[0]->text(0)eq'INVESTMENTS'){
-      push(@inv,\@line);
-    } elsif($line[0]->text(0)eq'TRANSACTIONS'){
-      push(@trn,\@line);
-    } else {
-      die "unknown part: ", $line[0]->text(0);
-    };
-  };
-  invest(@inv);
-  exit(0);
-}
-my(%hist);
-sub avg { 
-  return sum(@_)/@_;
-};
-my(%acct);
-sub invest {
-  local(@_)=@_;
-  my(%seen);
-  for(@_) {
-    for(@$_) {
-      for(@{$_->word}){
-        say unless $seen{$_->{year}}{$_->{quarter}}++;
-      }
-    }
-  };
-  my(@acct,$acct);
-  for(@_){
-    my($range)=$_;
-    local(*_)=$range;
-    while(@_) {
-      my($rstart)=map { $_->text } shift;
-      my(@skip);
-      while(@_ and $_[0]->text(0) !~ m{^\d+$}){
-        push(@skip,shift);
-      }
-      while(@_ and !$trig{$_[0]->text(0)}){
-        my($line)=shift;
-        my($text)=$line->text;
-        my($wone)=$line->text(0);
-        eex($line->text);
-#            if ($wone =~ m{^[0-9]+$}) {
-#              push(@acct,$acct);
-#              next;
-#            } elsif($wone eq "Total" or $trig{$wone}){
-#              eex("CLEARING",scalar(@$acct));
-#              push(@acct,$acct) unless $acct[$#acct] eq $acct;;
-#              $acct=undef;
-#            } elsif(defined($acct)){
-#              push(@$acct,$_);
-#              eex("ADDING", scalar(@$acct));
-#            } else {
-#              die pp($text);
-#            };
-#            eex("$acct");
-      };
-    };
-  };
-  for(@acct){
-    eex($_);
-  };
-  if(defined($acct)){
-    die pp(acct=>$acct);
-  };
-};
+for my $file (sort glob("json/*.json")) {
+  my($key)=path($file)->basename(".json");
+  my($data)=JSON::PP->new->decode(path($file)->slurp);
+  my(@xacts)=@{$data->{xact}//[]};
+  my(@ivsts)=@{$data->{ivst}//[]};
+  next unless @xacts || @ivsts;
 
-    
-sub transact {
-  my(@tr)=@_;
-  my(@data);
-  for(0 .. $#tr) {
-    local($_)=$tr[$_];
-    local(*_)=$_;
-    my($mark)=shift;
-    my($min_y2,$max_y1);
-    my($head)=shift;
-    die "bad rnage" unless $head->text eq "Date Description Amount";
-    my $rule1=${head}->word(0)->right;
-    my $rule2=${head}->word(1)->left;
-    my $rule3=${head}->word(1)->right;
-    my $rule4=${head}->word(2)->left;
-    my $rule5=${head}->word(2)->right-5;
-
-    my($last);
-    for(@_) {
-      my(@word)=@{$_->word};
-      if(@word>1 and $_->word(1)->text =~ m{Ara|Shirley}){
-        unshift(@data,[{acct=>$_->text(0),desc=>$_->text()}]);
-      } elsif ($trig{$_->text(0)}) {
-        last;
-      } elsif(($_->left < $rule1 or $_->right >= $rule5)and scalar(@{$_->word()})>2 ) {
-        local(*_)=$_->word;
-        my(%data);
-        $data{date}=join(" ", map { $_->text } shift);
-        $data{left}=$_->left;
-        if($_->right >= $rule5-50) {
-          $data{amnt}=join(" ",map{ s{,}{}g; $_ } map { $_->text } pop);
-        } else {
-          $data{amnt}=0;
-        };
-        $data{desc}=join(" ",map { $_->text } @_);
-        $last=\%data;
-        push(@{$data[0]},\%data);
-      } else {
-        local(*_)=$_->word;
-        $last->{desc}=join("\n",$last->{desc},join(" ",map { $_->text } @_));
-      };
-    };
-  };
-  my ($sth_a)=dbh->prepare("insert into acct (acct,title) values (?,?) on conflict do nothing;");
-  my ($sth_t)=dbh->prepare("insert into xact (acct,date,text,amnt) values (?,?,?,?)");
-  for(@data) {
-    my($obj)=shift @$_;
-    my($acct)=$obj->{acct};
-    $sth_a->execute($acct,$obj->{desc});
-    for(@$_){
-      $_->{amnt} =~ s{A}{4}g;
-      $_->{date} =~ s{^1212}{12/2};
-      $sth_t->execute($acct,$_->{date},$_->{desc},$_->{amnt});
-    };    
-  };
+  my($out)=$out_dir->child("$key.html");
+  my $fh=$out->openw;
+  print $fh html_head($key);
+  print $fh ivst_table(@ivsts) if @ivsts;
+  print $fh xact_table(@xacts) if @xacts;
+  print $fh "</body></html>\n";
+  say $out;
 }
 
+sub html_head {
+  my($id)=@_;
+  return <<"EOF";
+<html><head><title>Statement $id</title><style>
+body{font-family:sans-serif;padding:20px}
+table{border-collapse:collapse;margin-bottom:30px;width:100%}
+th{border:1px solid #999;padding:6px;background:#e0e0e0;text-align:left}
+td{border:1px solid #ccc;padding:6px;font-family:monospace}
+td.num{text-align:right}
+tr:nth-child(even){background:#f9f9f9}
+</style></head><body><h1>Statement: $id</h1>
+EOF
+}
+
+sub xact_table {
+  my $html = "<h2>Transactions</h2><table>\n";
+  $html .= "<tr><th>Account</th><th>Date</th><th>Description</th><th>Amount</th></tr>\n";
+  for my $r (@_) {
+    $html .= sprintf "<tr><td>%s</td><td>%s</td><td>%s</td><td class=num>%s</td></tr>\n",
+      $r->{account}//'', $r->{date}//'', $r->{desc}//'', $r->{amount}//'';
+  }
+  $html .= "</table>\n";
+  return $html;
+}
+
+sub ivst_table {
+  my $html = "<h2>Investments</h2><table>\n";
+  $html .= "<tr><th>Account</th><th>Description</th><th>Shares</th><th>Price</th>"
+         . "<th>Total</th><th>Basis</th><th>Unrealized</th></tr>\n";
+  for my $r (@_) {
+    $html .= sprintf "<tr><td>%s</td><td>%s</td><td class=num>%s</td><td class=num>%s</td>"
+           . "<td class=num>%s</td><td class=num>%s</td><td class=num>%s</td></tr>\n",
+      $r->{account}//'', $r->{desc}//'',
+      $r->{num}//'', $r->{sprice}//'',
+      $r->{total}//'', $r->{basis}//'', $r->{unreal}//'';
+  }
+  $html .= "</table>\n";
+  return $html;
+}

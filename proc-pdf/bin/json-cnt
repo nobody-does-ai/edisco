@@ -1,0 +1,20 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use JSONUtil;
+our(@VERSION) = qw( 0 1 0 );
+
+for(glob("json/*.json")){
+  my($hash)=load_json($_);
+  @_=path($_)->basename(".json");
+  for(keys %$hash){
+    push(@_,0+@{$hash->{$_}});
+  };
+  eex(@_);
+};

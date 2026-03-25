@@ -1,0 +1,1 @@
+../proc-pdf/AGENTS.md

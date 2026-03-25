@@ -1,0 +1,10 @@
+#!/bin/bash
+exec 2>&1
+set -xv
+cd $(dirname "${BASH_SOURCE}")
+echo sleep 2 \; setlock lock sleep 15 \& | bash &
+export HOME=$(echo ~nobody)
+setlock lock bash < <(
+  echo echo setuidgid nobody pass show AI/OPENAI
+  echo npm run dev
+);

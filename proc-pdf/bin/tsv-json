@@ -1,0 +1,69 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use autodie;
+use Nobody::Util;
+use JSON::PP;
+use TsvUtil qw(group_find vert_sort words_merge split_lines
+               is_num clean_num parse_xact parse_ivst);
+use TsvFile;
+use TsvDoc;
+our(@VERSION) = qw( 0 1 0 );
+
+sub is_account {
+  my($text)=@_;
+  my(@tok)=split(/\s+/,$text);
+  return 0 unless @tok >= 2;
+  return 0 unless $tok[0] =~ /^\d{5,10}$/;
+  return !is_num($tok[-1]);
+};
+
+my($json_dir)=path("json")->mkdir;
+
+sub main {
+  my(%doc);
+  for my $file(sort glob("tsv/*.tsv")){
+    my($p)=path($file);
+    my($key)=($file=~m{(\d\d\d\d-Q\d)})[0];
+    push(@{$doc{$key}},TsvFile->new($p));
+  };
+  for my $key(sort keys %doc){
+    my $d=TsvDoc->new($key,$doc{$key});
+    my(@xacts,@ivsts);
+    my($section,$account)=('','');
+    for my $page(@{$d->pages}){
+      my(@rows)=map{[words_merge(@$_)]}split_lines(@{$page->word});
+      for my $row(@rows){
+        my(@w)=@$row;
+        my($text)=join(' ',map{$_->text}@w);
+        if   ($text=~/^TRANSACTIONS/){ $section='xact'; next }
+        elsif($text=~/^INVESTMENTS/) { $section='ivst'; next }
+        next unless $section;
+        next if $text=~m{^(Date\b|Number\b|Page\b|A CONSOL|COVERING|HOW MY)}i;
+        if(is_account($text)){ $account=(split(/\s+/,$text))[0]; next };
+        if($section eq 'xact'){
+          my($x)=parse_xact(@w);
+          if($x){ $x->{account}=$account; push @xacts,$x };
+        } elsif($section eq 'ivst'){
+          my($i)=parse_ivst(@w);
+          if($i){
+            $i->{account}=$account;
+            push @ivsts,$i;
+          } elsif(@ivsts && $text=~/^\w/ && $text!~/^\d/ && $text!~/\d$/ && length($text)<40){
+            $ivsts[-1]{cat}=$text;
+          };
+        };
+      };
+    };
+    my($out)=$json_dir->child("$key.json");
+    $out->spew(JSON::PP->new->pretty->canonical->encode({
+      xact=>\@xacts, ivst=>\@ivsts
+    }));
+    say $out;
+  };
+};
+main;

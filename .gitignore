@@ -1,4 +1,7 @@
 *.json
+lock
+supervise
+*.log.gz
 *.log
 *.png
 *.tar.gz
@@ -26,3 +29,11 @@ xxx
 out
 logfile
 suck
+/bin
+libexec
+etc
+dir
+share
+
+nmh
+proc-pdf2
