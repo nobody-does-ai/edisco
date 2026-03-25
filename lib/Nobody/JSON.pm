@@ -21,7 +21,7 @@ BEGIN {
   require Nobody::PP;
 }
 our(@ISA) = qw(Exporter);
-our(@EXPORT) = ( qw( decode_json encode_json ));
+our(@EXPORT) = ( qw( decode_json($) encode_json($) ));
 
 our($coder);
 sub json_decode($);
