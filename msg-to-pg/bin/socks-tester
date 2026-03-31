@@ -1,0 +1,45 @@
+#!/usr/bin/perl
+use lib "lib";
+use strict;
+use warnings;
+use common::sense;
+use Nobody::Util;
+use AnyEvent;
+use AnyEvent::Socket;
+use AnyEvent::Handle;
+use AE;
+
+my $port = 1080;
+my $host="localhost";
+my($cv)=AE::cv;
+
+my $fhh;
+my $conn; $conn=tcp_connect $host, $port, sub {
+  my ($fh) = @_ or do {
+    warn "Connection to $host failed: $!";
+    return;
+  };
+  $fhh = AnyEvent::Handle->new(
+    fh       => $fh,
+#        tls      => 'connect', # Raw SSL mode
+#        tls_ctx  => { verify => 0 }, # Skip cert check for debugging
+    on_error => sub {
+      my ($self, $fatal, $msg) = @_;
+      warn "Error: $msg\n";
+      $self->destroy;
+      $cv->send;
+    },
+    on_eof => sub {
+      warn "Connection closed by server.\n";
+      $cv->send;
+    },
+    on_read => sub {
+      my($self,$test)=@_;
+      eex("$self",$test);
+      $self->push_write("x");
+    }
+  );
+  $fhh->push_write(pack('CCCC',5,1));
+};
+
+$cv->recv;

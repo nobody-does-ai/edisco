@@ -1,0 +1,156 @@
+#!/usr/bin/perl
+use lib "lib";
+use strict;
+use warnings;
+use AnyEvent::Handle;
+use AnyEvent::Socket;
+use AnyEvent;
+use MIME::Base64;
+use Nobody::GMailConfig;
+use Nobody::Util;
+
+my(@all)= qw(
+ gmail/rich.freeman.paul gmail/rich.paul.freeman gmail/rich.private.paul
+);
+@ARGV=@all unless @ARGV;
+my $config = load_config(splice(@ARGV,rand(@ARGV),1));
+eex($config);
+
+my $user       = $config->{user};
+my $pass       = $config->{pass};
+my $host       = 'smtp.gmail.com';
+my $port       = 465; # Implicit SSL
+my $to         = $user;
+my($config)=
+
+# Base64 Encode Credentials
+my $b64_user = encode_base64($user, '');
+my $b64_pass = encode_base64($pass, '');
+
+my $cv = AnyEvent->condvar;
+
+print "Connecting to $host:$port...\n";
+
+tcp_connect $host, $port, sub {
+    my ($fh) = @_ or die "Connect failed: $!";
+
+    my $hdl;
+    $hdl = AnyEvent::Handle->new(
+        fh       => $fh,
+        tls      => 'connect', # Raw SSL mode
+        tls_ctx  => { verify => 0 }, # Skip cert check for debugging
+        on_error => sub {
+            my ($hdl, $fatal, $msg) = @_;
+            warn "Error: $msg\n";
+            $hdl->destroy;
+            $cv->send;
+        },
+        on_eof => sub {
+            print "Connection closed by server.\n";
+            $cv->send;
+        }
+    );
+    # Helper to log and send
+    my $send_cmd = sub {
+        my ($cmd) = @_;
+        print ">> $cmd"; # Log outgoing
+        $hdl->push_write("$cmd\r\n");
+    };
+    $send_cmd->("This is a test");
+
+    # --- STATE MACHINE ---
+
+    # 1. Wait for Greeting (220)
+    $hdl->push_read(line => sub {
+        my ($hdl, $line) = @_;
+        print "<< $line\n";
+        
+        # 2. Send EHLO
+        $send_cmd->("EHLO localhost");
+        
+        # 3. Read EHLO response (multiline)
+        # We cheat and just read until we see the final line (space after code)
+        my $reader; $reader = sub {
+            $hdl->push_read(line => sub {
+                my ($h, $l) = @_;
+                print "<< $l\n";
+                if ($l =~ /^\d{3}\s/) {
+                    # Final line of EHLO response received
+                    
+                    # 4. Start Auth
+                    $send_cmd->("AUTH LOGIN");
+                    
+                    # 5. Expect Base64 Username Prompt (334)
+                    $hdl->push_read(line => sub {
+                        my ($h, $l) = @_;
+                        print "<< $l\n";
+                        
+                        # 6. Send Username
+                        $send_cmd->($b64_user);
+                        
+                        # 7. Expect Base64 Password Prompt (334)
+                        $hdl->push_read(line => sub {
+                            my ($h, $l) = @_;
+                            print "<< $l\n";
+                            
+                            # 8. Send Password
+                            $send_cmd->($b64_pass);
+                            
+                            # 9. Expect Auth Success (235)
+                            $hdl->push_read(line => sub {
+                                my ($h, $l) = @_;
+                                print "<< $l\n";
+                                die "Auth failed!" unless $l =~ /^235/;
+
+                                # 10. Send Mail From
+                                $send_cmd->("MAIL FROM: <$user>");
+                                $hdl->push_read(line => sub {
+                                    print "<< $_[1]\n";
+                                    
+                                    # 11. Send Rcpt To
+                                    $send_cmd->("RCPT TO: <$to>");
+                                    $hdl->push_read(line => sub {
+                                        print "<< $_[1]\n";
+                                        
+                                        # 12. Send DATA
+                                        $send_cmd->("DATA");
+                                        $hdl->push_read(line => sub {
+                                            print "<< $_[1]\n"; # Should be 354
+                                            
+                                            # 13. Send Body
+                                            print ">> [Sending Body]\n";
+                                            $hdl->push_write(
+                                                "Subject: Raw AnyEvent Test\r\n" .
+                                                "\r\n" .
+                                                "This message was sent via raw SSL socket.\r\n" .
+                                                ".\r\n"
+                                            );
+                                            
+                                            # 14. Expect Queued (250)
+                                            $hdl->push_read(line => sub {
+                                                print "<< $_[1]\n";
+                                                
+                                                # 15. Quit
+                                                $send_cmd->("QUIT");
+                                                $hdl->on_drain(sub {
+                                                    print "Done.\n";
+                                                    $cv->send;
+                                                });
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                } else {
+                    # Read next line of EHLO
+                    $reader->();
+                }
+            });
+        };
+        $reader->();
+    });
+};
+
+$cv->recv;

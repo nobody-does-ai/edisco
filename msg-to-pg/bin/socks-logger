@@ -1,0 +1,115 @@
+#!/usr/bin/perl
+use lib "lib";
+use strict;
+use warnings;
+use common::sense;
+use Nobody::Util;
+use AnyEvent;
+use AnyEvent::Socket;
+use AnyEvent::Handle;
+
+my $local_port = 1080;
+print "SOCKS5 Logging Proxy starting on port $local_port...\n";
+
+my $client_hdl;
+my $serv = tcp_server undef, $local_port, sub {
+    my ($client_fh, $client_host, $client_port) = @_;
+    eex("$client_fh","$client_host","$client_port");
+    unless($client_fh){
+      warn "accept:$!";
+      return;
+    };
+    $client_hdl = AnyEvent::Handle->new(
+        fh => $client_fh,
+        on_error => sub { $_[0]->destroy; print "Client disconnected.\n" },
+    );
+    eex( "push_read" );
+    # --- 1. Negotiation: Version and Auth Methods ---
+    $client_hdl->push_read(chunk => 2, sub {
+        my ($h, $data) = @_;
+        my ($ver, $nmethods) = unpack('CC', $data);
+        eex({ver=>$ver, meth=>$nmethods}); 
+        $h->push_read(chunk => $nmethods, sub {
+            my ($h, $methods) = @_;
+            eex( $methods );
+            # Respond: Version 5, No Auth (0x00)
+            $h->push_write(pack('CC', 5, 0));
+
+            # --- 2. Request: Command and Destination ---
+            $h->push_read(chunk => 4, sub {
+                my ($h, $req) = @_;
+                my ($v, $cmd, $rsv, $atype) = unpack('CCCC', $req);
+                
+                # We only support CONNECT (0x01)
+                if ($cmd != 1) { $h->destroy; return; }
+
+                # Handle Address Types: IPv4 (1) or Domain (3)
+                if ($atype == 1) { # IPv4
+                    $h->push_read(chunk => 4, sub {
+                        my ($h, $ip) = @_;
+                        my $host = join('.', unpack('CCCC', $ip));
+                        $h->push_read(chunk => 2, sub {
+                            my ($h, $p) = @_;
+                            connect_to_target($h, $host, unpack('n', $p));
+                        });
+                    });
+                } elsif ($atype == 3) { # Domain Name
+                    $h->push_read(chunk => 1, sub {
+                        my ($h, $len) = @_;
+                        $h->push_read(chunk => unpack('C', $len), sub {
+                            my ($h, $host) = @_;
+                            $h->push_read(chunk => 2, sub {
+                                my ($h, $p) = @_;
+                                connect_to_target($h, $host, unpack('n', $p));
+                            });
+                        });
+                    });
+                }
+            });
+        });
+    });
+};
+
+sub connect_to_target {
+    my ($client_hdl, $host, $port) = @_;
+    print "Connecting to $host:$port...\n";
+
+    tcp_connect $host, $port, sub {
+        my ($target_fh) = @_ or do {
+            warn "Connection to $host failed: $!";
+            $client_hdl->push_write(pack('C8', 5, 4, 0, 1, 0, 0, 0, 0)); # Failure reply
+            $client_hdl->destroy;
+            return;
+        };
+
+        # Success Reply to Client
+        $client_hdl->push_write(pack('C10', 5, 0, 0, 1, 0, 0, 0, 0, 0, 0));
+
+        my $target_hdl = AnyEvent::Handle->new(
+            fh => $target_fh,
+            on_error => sub { $client_hdl->destroy; $_[0]->destroy; }
+        );
+
+        # --- THE LOGGING PIPE ---
+        
+        # Client -> Target
+        $client_hdl->on_read(sub {
+            my ($h) = @_;
+            my $data = $h->{rbuf};
+            $h->{rbuf} = "";
+            print "\e[1;32m>>> CLIENT:\e[0m $data"; # Green for outgoing
+            $target_hdl->push_write($data);
+        });
+
+        # Target -> Client
+        $target_hdl->on_read(sub {
+            my ($h) = @_;
+            my $data = $h->{rbuf};
+            $h->{rbuf} = "";
+            print "\e[1;34m<<< SERVER:\e[0m $data"; # Blue for incoming
+            $client_hdl->push_write($data);
+        });
+    };
+}
+
+AnyEvent->condvar->recv;
