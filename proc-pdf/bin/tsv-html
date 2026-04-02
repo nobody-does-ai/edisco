@@ -129,9 +129,7 @@ sub read_json {
 sub rows_for {
   my($data,$key)=@_;
   my(@rows);
-#      for my $quarter(sort keys %$data){
-    push @rows, @{$data->{$key}//[]};
-#      };
+  push @rows, @{$data->{$key}//[]};
   return @rows;
 }
 

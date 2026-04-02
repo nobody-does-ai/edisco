@@ -537,6 +537,9 @@ BEGIN {
     }
     elsif ($type eq "CODE") {
       $out = deparse( $rval );
+      while(substr($out,-1,1)eq'\n'){
+        substr($out,-1,1)="";
+      };
     }
     elsif ($type eq "LVALUE" ) {
       my($rval)=$rval;

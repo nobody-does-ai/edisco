@@ -6,19 +6,6 @@ our(%red);
 our($re);
 use Nobody::Util qw(croak class ppx safe_can eex);
 our($fileno);
-#    BEGIN { say fileno(STDOUT); };
-#    BEGIN { $fileno=\&CORE::fileno; };
-#    BEGIN {
-#      sub OUR_fileno(*) {
-#        $DB::single=1;
-#      };
-#    };
-#    BEGIN { eex $CORE::{fileno},\&CORE::fileno; *CORE::fileno=\&OUT_fileno; };
-#    BEGIN { say $fileno };
-BEGIN {
-  open($STDERR,">&STDERR");
-  open($STDOUT,">&STDOUT");
-}
 sub TIEHANDLE {
   $STDERR->say(ppx($_[1]));
   my $class = class(shift);
@@ -112,6 +99,7 @@ sub add {
 };
 BEGIN {
   tie *STDOUT, __PACKAGE__, *STDOUT;
+  tie *STDERR, __PACKAGE__, *STDERR;
 }
 unless(caller){
   package main;
@@ -119,6 +107,9 @@ unless(caller){
   say fileno(*STDOUT);
   Nobody::Redact::add("test","this");
   syswrite(STDOUT,"test\n");
+  STDERR->say("this is a test this is only a test\n");
+  STDERR->say("this is a test this is only a test\n");
+  STDERR->say("this is a test this is only a test\n");
   STDOUT->say("this is a test this is only a test\n");
   STDOUT->say("this is a test this is only a test\n");
   STDOUT->say("this is a test this is only a test\n");

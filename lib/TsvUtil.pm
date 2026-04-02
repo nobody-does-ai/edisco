@@ -258,8 +258,8 @@ sub pdf_to_png {
     return $of;
   };
   $of->parent->mkdir;
-  err("xform $if to $of (convert -density 300 -colorspace Gray)");
-  system(qw(convert -density 300 -colorspace Gray), $if, $of);
+  err("xform $if to $of (convert -density 300 )");
+  system(qw(convert -density 300 ), $if, $of);
   die "convert failed: $?" if $?;
   return path($of);
 };
@@ -295,7 +295,6 @@ sub png_to_tsv {
   return $of;
 };
 sub pdf_to_pgs {
-  trace(@_);
   return map { pdf_to_pgs($_) } @_ unless 1==@_;
   my($fmt)="pdf/%s-%03d.pdf";
   my ($if)=path(shift);
