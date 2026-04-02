@@ -1,6 +1,9 @@
 package Nobody::Exes;
 require Exporter;
-our(@EXPORT) = qw(path_find editor);
+our(@EXPORT);
+BEGIN {
+  push(@EXPORT,path_find,editor);
+};
 *import=\&Exporter::import;
 use Env qw(@PATH @PERL5LIB @LD_LIBRARY_PATH @MANPATH);
 use Nobody::Util;
