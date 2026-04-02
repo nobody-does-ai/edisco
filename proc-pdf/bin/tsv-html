@@ -18,7 +18,7 @@ sub rows_for;
 sub display_val;
 sub keep_row;
 my($ivest_cols,$xact_cols);
-@ARGV=glob("json/*.json") unless @ARGV;
+@ARGV=glob("json/202[0-9]-Q[0-9]*.json") unless @ARGV;
 main($_)for@ARGV;
 exit(0);
 sub main {
@@ -43,6 +43,7 @@ sub main {
 
 sub read_json {
   my($json_file)=@_;
+  eex("$json_file");
   my($json_text);
   if(defined $json_file){
     my($fh)=path($json_file)->openr;
