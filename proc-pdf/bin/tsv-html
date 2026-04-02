@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #!/usr/bin/perl
 # vim: ts=2 sw=2 ft=perl
 eval 'exec perl -x -wS $0 ${1+"$@"}'
@@ -66,3 +67,181 @@ sub ivst_table {
   $html .= "</table>\n";
   return $html;
 }
+||||||| parent of b01ea0e (x)
+=======
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use autodie;
+use JSON::PP;
+use Nobody::Util;
+
+sub read_json;
+sub write_html;
+sub html;
+sub td;
+sub render_table;
+sub rows_for;
+sub display_val;
+sub keep_row;
+my($ivest_cols,$xact_cols);
+@ARGV=glob("json/*.json") unless @ARGV;
+main($_)for@ARGV;
+exit(0);
+sub main {
+  my($json_file)=@_;
+  my($html_file)=$json_file;
+  for($html_file){
+    s{json}{html}g;
+  };
+  my($data)=read_json($json_file);
+  my($xact)={
+    title=>"transactions",
+    cols=>$xact_cols,
+    rows=>[ rows_for($data,'transactions') ]
+  };
+  my($ivest)={
+    title=>'investments',
+    cols=>$ivest_cols,
+    rows=>[ rows_for($data,'investments') ]
+  };
+  write_html( $html_file, $ivest, $xact);
+}
+
+sub read_json {
+  my($json_file)=@_;
+  my($json_text);
+  if(defined $json_file){
+    my($fh)=path($json_file)->openr;
+    local $/;
+    $json_text=<$fh>;
+    close($fh);
+  } else {
+    $json_text=`perl bin/tsv-json`;
+  };
+  return JSON::PP->new->decode($json_text);
+}
+
+sub rows_for {
+  my($data,$key)=@_;
+  my(@rows);
+#      for my $quarter(sort keys %$data){
+    push @rows, @{$data->{$key}//[]};
+#      };
+  return @rows;
+}
+
+sub write_html {
+  my($file,$title)=splice(@_,0,1);
+  ($title)=map { path($_)->basename(".html") } $file;
+  eex( [ $file, $title ] );
+  my($ivest,$xact)=splice(@_,0,2);
+  my($text)=qq{
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>@{[html($title)]}</title>
+  <link rel="stylesheet" href="data.css">
+  <style>
+    body { font-family: sans-serif; margin: 1rem; }
+    h1, p { margin: 0 0 1rem; }
+    table { width: 100%; }
+    th {
+      position: sticky;
+      top: 0;
+      background: #eef;
+      border: solid blue 2px;
+      padding: 4px;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) { background: #f8fbff; }
+    td.wrap { min-width: 24rem; }
+  </style>
+</head>
+<body>
+  <h1>@{[html($title)]}</h1>
+};
+for( $ivest, $xact ) {
+  my(%data)=%{$_};
+  $text.=render_table($data{cols},$data{rows});
+};
+$text=qq{$text
+</body>
+</html>
+};
+  path($file)->touchpath->spew($text);;
+}
+
+sub render_table {
+  my($cols,$rows)=@_;
+  my($out)="<table>\n<thead><tr>";
+  for my $col(@$cols){
+    $out.="<th>".html($col)."</th>";
+  };
+  $out.="</tr></thead>\n<tbody>\n";
+  for my $row(@$rows){
+    $out.="<tr>";
+    for my $col(@$cols){
+      $out.=td($col,$row->{$col});
+    };
+    $out.="</tr>\n";
+  };
+  $out.="</tbody>\n</table>\n";
+  return $out;
+}
+
+sub td {
+  my($col,$val)=@_;
+  $val='' unless defined $val;
+  $val=display_val($col,$val);
+  my($attr)=($col =~ /(?:amount|shares|price|value|basis|gain|rate|units)\z/) ? ' n=""' : ' t=""';
+  my($neg)=($val =~ /^-/) ? ' neg=""' : '';
+  my($wrap)=($col =~ /(?:description_raw|statement_file|security_name)\z/) ? ' class="wrap"' : '';
+  return sprintf('<td%s%s%s>%s</td>', $attr, $neg, $wrap, html($val));
+}
+
+sub display_val {
+  my($col,$val)=@_;
+  return $val unless $col eq 'account_number';
+  return 'NimCrut' if $val eq '1603387';
+  return $val;
+}
+
+sub keep_row {
+  my($row)=@_;
+  return 0 unless $row;
+  return ($row->{account_number}//'') eq '1603387';
+}
+
+sub html {
+  local($_)=shift//'';
+  s/&/&amp;/g;
+  s/</&lt;/g;
+  s/>/&gt;/g;
+  return $_;
+}
+INIT {
+  $ivest_cols=[
+    qw(
+    statement_id   account_number  category
+    security_name  shares          share_price
+    market_value   cost_basis      unrealized_gain
+    security_key                   
+    )
+  ];
+  $xact_cols=[
+    qw(
+      statement_id  account_number        business_date
+      kind          counterparty_account  security_name
+      units         unit_price            rate
+      cash_amount   description_raw       
+    )
+  ];
+};
+>>>>>>> b01ea0e (x)

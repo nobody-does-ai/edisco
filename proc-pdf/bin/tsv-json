@@ -14,6 +14,249 @@ use TsvFile;
 use TsvDoc;
 our(@VERSION) = qw( 0 1 0 );
 
+<<<<<<< HEAD
+||||||| parent of b01ea0e (x)
+sub is_num { ($_[0]//'') =~ m{^-?[\d,]*\.?\d+$} }
+sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
+
+sub parse_xact {
+  my($text)=join(' ', map{$_->text//''}@_);
+  my(@tok)=split(/\s+/,$text);
+  return unless @tok >= 2;
+  my($date)=$tok[0];
+  return unless $date =~ m{^\d{1,2}/\d{2}/\d{4}$};
+  my($amount)=$tok[-1];
+  return unless is_num($amount);
+  my($desc)=join(' ',@tok[1..$#tok-1]);
+  return { date=>$date, desc=>$desc, amount=>clean_num($amount) };
+};
+
+sub parse_ivst {
+  my(@w)=@_;
+  my(@nums);
+  while(@w && is_num($w[-1]->text)){
+    unshift @nums, clean_num((pop @w)->text);
+  };
+  return unless @nums >= 3;
+  my($desc)=join(' ', map{$_->text//''}@w);
+  return unless $desc =~ /\w/;
+  return if $desc =~ /^Total\b/i;
+  my($num,$sprice,$total,$basis,$unreal);
+  if    (@nums==5){ ($num,$sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==4){ ($sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==3){ ($total,$basis,$unreal)=@nums };
+  my(%h)=(desc=>$desc);
+  $h{num}   =$num    if defined $num;
+  $h{sprice}=$sprice if defined $sprice;
+  $h{total} =$total  if defined $total;
+  $h{basis} =$basis  if defined $basis;
+  $h{unreal}=$unreal if defined $unreal;
+  return \%h;
+};
+
+=======
+sub is_num { ($_[0]//'') =~ m{^-?(?:[\d,]+(?:\.\d+)?|\.\d+)$} }
+sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
+sub norm_space { my $s=shift//return ''; $s=~s/\s+/ /g; $s=~s/^\s+|\s+$//g; $s }
+sub fmt_money { sprintf('%.2f', $_[0]) }
+sub title_key {
+  my($s)=@_;
+  return undef unless defined $s;
+  $s=norm_space($s);
+  if($s =~ /\(([A-Z][A-Z0-9]{1,9})\)/){
+    return "AH_$1";
+  };
+  my($base)=$s;
+  $base=~s/\([^)]*\)//g;
+  my(@tok)=grep{length}($base =~ /([A-Za-z0-9]+)/g);
+  my($acro)=join('', map { uc substr($_,0,1) } @tok);
+  return undef unless length $acro;
+  return "AH_$acro";
+}
+sub xact_kind {
+  my($desc)=@_;
+  return 'income_dividend' if $desc =~ /\bCash Dividend\b/i;
+  return 'income_capgain_long' if $desc =~ /\bLong Term Capital Gain Distribution\b/i;
+  return 'income_capgain_short' if $desc =~ /\bShort Term Capital Gain Distribution\b/i;
+  return 'income_interest' if $desc =~ /\bDaily Rate Income\b/i;
+  return 'fee' if $desc =~ /\bFee\b/i;
+  return 'transfer_out' if $desc =~ /\b(?:Cash Transfer|Cash Disbursement)\b.*\bWithdrawal\b/i;
+  return 'trade_buy' if $desc =~ /^Purchase\b/i;
+  return 'trade_sell' if $desc =~ /^Sale\b/i;
+  return 'transfer_in' if $desc =~ /\bDeposit\b/i;
+  return 'other';
+}
+sub xact_counterparty {
+  my($desc)=@_;
+  return $1 if $desc =~ /\b(?:To|account)\s+([A-Z]*\d{5,10}[A-Z]*)\b/i;
+  return undef;
+}
+sub parse_trade_security {
+  my($desc)=@_;
+  return unless $desc =~ /^(Purchase|Sale)\s+([\d,]+(?:\.\d+)?|\.\d+)\s+Units\s+of\s+(.+?)\s+\@\s+\$?([\d,]+(?:\.\d+)?|\.\d+)$/i;
+  return (
+    units => clean_num($2),
+    security_name => norm_space($3),
+    unit_price => clean_num($4),
+  );
+}
+sub parse_dividend_security {
+  my($desc)=@_;
+  return unless $desc =~ /\bCash Dividend\s+([\d,]+(?:\.\d+)?)\s+USD\s+(.+?)\s+For\s+([\d,]+(?:\.\d+)?)\s+(Units|Shares)\b/i;
+  return (
+    rate => clean_num($1),
+    security_name => norm_space($2),
+    units => clean_num($3),
+    units_kind => lc($4),
+  );
+}
+sub parse_capgain_security {
+  my($desc)=@_;
+  return unless $desc =~ /\b(?:Long|Short)\s+Term Capital Gain Distribution\s+([\d,]+(?:\.\d+)?)\s+USD\s+(.+?)\s+For\s+([\d,]+(?:\.\d+)?)\s+(Units|Shares)\b/i;
+  return (
+    rate => clean_num($1),
+    security_name => norm_space($2),
+    units => clean_num($3),
+    units_kind => lc($4),
+  );
+}
+sub parse_income_security {
+  my($desc)=@_;
+  return unless $desc =~ /\bDaily Rate Income on\s+(.+?)\s+For Period of\b/i;
+  return (
+    security_name => norm_space($1),
+  );
+}
+sub signed_amount {
+  my($desc,$amount)=@_;
+  return undef unless defined $amount;
+  $amount=clean_num($amount);
+  return undef unless defined $amount && length $amount;
+  my($abs)=$amount; $abs=~s/^-//;
+  return "-$abs" if $desc =~ /(?:^Purchase\b|Fee\b|Withdrawal\b)/i;
+  return $abs   if $desc =~ /(?:^Sale\b|Dividend\b|Income\b|Deposit\b)/i;
+  return $amount;
+}
+sub infer_dividend_amount {
+  my($desc,$amount)=@_;
+  return $amount unless defined $amount && $amount =~ /^\d+$/;
+  return $amount unless $desc =~ /\b(?:Cash Dividend|(?:Long|Short)\s+Term Capital Gain Distribution)\s+(\d+(?:\.\d+)?)\s+USD\b/i;
+  my($rate)=$1;
+  return $amount unless $desc =~ /\bFor\s+([\d,]+(?:\.\d+)?)\s+(?:Units|Shares)\b/i;
+  my($qty)=clean_num($1);
+  my($want)=sprintf('%.2f',$rate * $qty);
+  my($got)=$amount + 0;
+  return $want if $got >= 100 && abs(($got/100) - $want) < 0.02;
+  return $want if $got >= 1000 && abs(($got/1000) - $want) < 0.02;
+  return $amount;
+}
+sub infer_trade_amount {
+  my($desc,%t)=@_;
+  return undef unless defined $t{units} && defined $t{unit_price};
+  my($amt)=fmt_money(($t{units}+0) * ($t{unit_price}+0));
+  return "-$amt" if $desc =~ /^Purchase\b/i;
+  return $amt if $desc =~ /^Sale\b/i;
+  return undef;
+}
+sub is_xact_continuation {
+  my($text)=@_;
+  return 0 unless defined $text && length $text;
+  return 0 if is_header_noise($text) || is_account($text);
+  return 1 if $text =~ /^(?:Ex Date\b|Date\b|account:|AUA Platform Fee:)/i;
+  return 1 if $text =~ m{^\d{1,2}/\d{2}/\d{2}\b};
+  return 0;
+}
+sub reparse_xact {
+  my($x)=@_;
+  return unless $x;
+  my($desc)=$x->{description_raw};
+  if(my(%t)=parse_trade_security($desc)){
+    @{$x}{keys %t}=values %t;
+    $x->{cash_amount}=infer_trade_amount($desc,%t);
+  } elsif(my(%d)=parse_dividend_security($desc)){
+    @{$x}{keys %d}=values %d;
+    $x->{cash_amount}=infer_dividend_amount($desc,$x->{cash_amount});
+  } elsif(my(%g)=parse_capgain_security($desc)){
+    @{$x}{keys %g}=values %g;
+    $x->{cash_amount}=infer_dividend_amount($desc,$x->{cash_amount});
+  } elsif(my(%i)=parse_income_security($desc)){
+    @{$x}{keys %i}=values %i;
+  };
+  $x->{kind}=xact_kind($desc);
+  $x->{counterparty_account}=xact_counterparty($desc);
+  $x->{security_key}=title_key($x->{security_name}) if defined $x->{security_name};
+  return $x;
+}
+sub is_header_noise {
+  my($text)=@_;
+  return 1 if $text =~ m{^(?:Date\b|Number\b|Page\b|A CONSOL|COVERING|HOW MY)}i;
+  return 1 if $text =~ /^(?:Date Description Amount|Total value\b|Total For\b)/i;
+  return 1 if $text =~ /\bcontinue[dn]?\b/i;
+  return 0;
+}
+sub is_cat {
+  my($text)=@_;
+  return 0 unless defined $text && $text =~ /\w/;
+  return 0 if $text =~ /\d/;
+  return 0 if is_header_noise($text);
+  return 0 if $text =~ /\b(?:Trust|Ara|Shirley|Paul|U\/A|DTD|Account)\b/i;
+  return 1;
+}
+
+sub parse_xact {
+  my($text)=join(' ', map{$_->text//''}@_);
+  my(@tok)=split(/\s+/,$text);
+  return unless @tok >= 2;
+  my($business_date)=$tok[0];
+  return unless $business_date =~ m{^\d{1,2}/\d{2}/\d{4}$};
+  my($amount)=$tok[-1];
+  return unless is_num($amount);
+  my($desc)=norm_space(join(' ',@tok[1..$#tok-1]));
+  my(%x)=(
+    business_date => $business_date,
+    description_raw => $desc,
+    reported_amount => clean_num($amount),
+    cash_amount => clean_num($amount),
+  );
+  $x{cash_amount}=infer_dividend_amount($desc,$x{cash_amount});
+  $x{cash_amount}=signed_amount($desc,$x{cash_amount});
+  return reparse_xact(\%x);
+};
+
+sub parse_ivst {
+  my(@w)=@_;
+  my(@nums);
+  while(@w && is_num($w[-1]->text)){
+    unshift @nums, clean_num((pop @w)->text);
+  };
+  return unless @nums >= 3;
+  my($desc)=join(' ', map{$_->text//''}@w);
+  return unless $desc =~ /\w/;
+  return if $desc =~ /^Total\b/i;
+  my($num,$sprice,$total,$basis,$unreal);
+  if    (@nums==5){ ($num,$sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==4){ ($sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==3){
+    # Some fixed-income rows only expose par amount, price, and market value.
+    if(($nums[1]+0) > 0 && ($nums[1]+0) < 200 && ($nums[2]+0) > ($nums[1]+0) * 10){
+      ($num,$sprice,$total)=@nums;
+    } else {
+      ($total,$basis,$unreal)=@nums;
+    };
+  };
+  my(%h)=(
+    security_name => norm_space($desc),
+  );
+  $h{shares} = $num if defined $num;
+  $h{share_price} = $sprice if defined $sprice;
+  $h{market_value} = $total if defined $total;
+  $h{cost_basis} = $basis if defined $basis;
+  $h{unrealized_gain} = $unreal if defined $unreal;
+  $h{security_key} = title_key($h{security_name});
+  return \%h;
+};
+
+>>>>>>> b01ea0e (x)
 sub is_account {
   my($text)=@_;
   my(@tok)=split(/\s+/,$text);
@@ -21,18 +264,40 @@ sub is_account {
   return 0 unless $tok[0] =~ /^\d{5,10}$/;
   return !is_num($tok[-1]);
 };
+sub statement_file_for {
+  my($key)=@_;
+  for my $dir(qw(src pdf)){
+    for my $ext(qw(pdf)){
+      my($file)="$dir/$key.$ext";
+      return $file if -f $file;
+    };
+  };
+  return undef;
+}
 
 my($json_dir)=path("json")->mkdir;
 
 sub main {
   my(%doc);
   for my $file(sort glob("tsv/*.tsv")){
+    next unless -s $file;
     my($p)=path($file);
     my($key)=($file=~m{(\d\d\d\d-Q\d)})[0];
-    push(@{$doc{$key}},TsvFile->new($p));
+    next unless defined $key;
+    my($tsv)=eval { TsvFile->new($p) };
+    next unless $tsv;
+    push(@{$doc{$key}},$tsv);
   };
+<<<<<<< HEAD
+||||||| parent of b01ea0e (x)
+  my(%result);
+=======
+  my(%securities,%categories);
+  my(%result);
+>>>>>>> b01ea0e (x)
   for my $key(sort keys %doc){
     my $d=TsvDoc->new($key,$doc{$key});
+    my($statement_file)=statement_file_for($key);
     my(@xacts,@ivsts);
     my($section,$account)=('','');
     for my $page(@{$d->pages}){
@@ -43,27 +308,74 @@ sub main {
         if   ($text=~/^TRANSACTIONS/){ $section='xact'; next }
         elsif($text=~/^INVESTMENTS/) { $section='ivst'; next }
         next unless $section;
-        next if $text=~m{^(Date\b|Number\b|Page\b|A CONSOL|COVERING|HOW MY)}i;
-        if(is_account($text)){ $account=(split(/\s+/,$text))[0]; next };
         if($section eq 'xact'){
+          if(@xacts && is_xact_continuation($text)){
+            $xacts[-1]{description_raw}=norm_space("$xacts[-1]{description_raw} $text");
+            reparse_xact($xacts[-1]);
+            next;
+          };
+          next if is_header_noise($text);
+          if(is_account($text)){ $account=(split(/\s+/,$text))[0]; next };
           my($x)=parse_xact(@w);
-          if($x){ $x->{account}=$account; push @xacts,$x };
+          if($x){
+            $x->{quarter} = $key;
+            $x->{statement_id} = $key;
+            $x->{statement_file} = $statement_file if defined $statement_file;
+            $x->{account_number} = $account;
+            push @xacts,$x;
+          };
         } elsif($section eq 'ivst'){
+          next if is_header_noise($text);
+          if(is_account($text)){ $account=(split(/\s+/,$text))[0]; next };
           my($i)=parse_ivst(@w);
           if($i){
-            $i->{account}=$account;
+            $i->{quarter} = $key;
+            $i->{statement_id} = $key;
+            $i->{statement_file} = $statement_file if defined $statement_file;
+            $i->{account_number} = $account;
             push @ivsts,$i;
-          } elsif(@ivsts && $text=~/^\w/ && $text!~/^\d/ && $text!~/\d$/ && length($text)<40){
-            $ivsts[-1]{cat}=$text;
+          } elsif(@ivsts && !defined $ivsts[-1]{category} && is_cat($text) && length($text)<40){
+            $ivsts[-1]{category}=norm_space($text);
           };
         };
       };
     };
+<<<<<<< HEAD
     my($out)=$json_dir->child("$key.json");
     $out->spew(JSON::PP->new->pretty->canonical->encode({
       xact=>\@xacts, ivst=>\@ivsts
     }));
     say $out;
+||||||| parent of b01ea0e (x)
+    $result{$key}={ xact=>\@xacts, ivst=>\@ivsts };
+=======
+    # accumulate master tables from what we found
+    for my $r(@xacts,@ivsts){
+      my($sk,$sn)=@{$r}{qw(security_key security_name)};
+      $securities{$sk}=$sn if defined $sk && defined $sn;
+      my($cat)=$r->{category};
+      $categories{$cat}=1 if defined $cat;
+    };
+    my($path,$json,%res)=path("json/$key.json");
+    %res=(
+      statement_file => $statement_file,
+      investments => \@ivsts,
+      transactions => \@xacts,
+    );
+    $json=JSON::PP->new->pretty->canonical->encode(\%res);
+    $path->touchpath->spew($json);
+>>>>>>> b01ea0e (x)
   };
+<<<<<<< HEAD
+||||||| parent of b01ea0e (x)
+  print JSON::PP->new->pretty->canonical->encode(\%result);
+=======
+  path("json/securities.json")->touchpath->spew(
+    JSON::PP->new->pretty->canonical->encode(\%securities)
+  );
+  path("json/categories.json")->touchpath->spew(
+    JSON::PP->new->pretty->canonical->encode([sort keys %categories])
+  );
+>>>>>>> b01ea0e (x)
 };
 main;

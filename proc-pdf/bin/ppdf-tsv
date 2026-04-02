@@ -9,7 +9,6 @@ BEGIN {
   use lib "$Bin/../lib";
 };
 use Carp::Always;
-use vars (@var);
 use Carp qw( cluck confess croak carp );
 use List::Util qw();
 use List::Util @List::Util::EXPORT_OK;

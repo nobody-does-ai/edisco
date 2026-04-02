@@ -1,7 +1,7 @@
-png
-tsv
-dat
-pdf
+/png
+/tsv
+/dat
+/pdf
 *.html
 arc
 trace.pg
@@ -10,3 +10,4 @@ trace.pg
 doit
 dump*
 gather
+sect

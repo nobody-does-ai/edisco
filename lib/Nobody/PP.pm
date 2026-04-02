@@ -2,13 +2,17 @@ package Nobody::PP;
 require Exporter;
 *import = \&Exporter::import;
 
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib", "$RealBin/lib";
+use Nobody::Auto qw( common::sense );
 use strict;
 use common::sense;
 use vars qw(@EXPORT @EXPORT_OK $VERSION $DEBUG %EXPORT_TAGS @subs);
 use Data::Dumper;
+use Scalar::Util qw(blessed);
 BEGIN {
-  *blessed=*builtin::blessed;
-  @subs=qw(dd ddx ee eex pp ppx quote qquote loc trace); 
+  # blessed imported from Scalar::Util above (builtin::blessed requires perl 5.36+)
+  @subs=qw(dd ddx ee eex pp ppx quote qquote loc); 
 };
 use subs @subs;
 @EXPORT = @EXPORT_OK = @subs;
@@ -30,15 +34,6 @@ sub ee {
 sub dd {
   print pp(@_), "\n";
 }
-sub trace {
-  my($idx)=0;
-  my($pkg, $file, $line);
-  my(@trace);
-  while( ($pkg,$file,$line)=caller($idx++) ) {
-    push(@trace,join(":",$file,$line,$pkg,$idx));
-  };
-  say STDERR for @trace;
-};
 sub loc {
   my($idx)=0;
   my($pkg, $file, $line);
@@ -51,7 +46,7 @@ sub ppx {
   return loc(pp(@_));
 }
 sub ddx {
-  ay STDOUT ppx(@_);
+  say STDOUT ppx(@_);
 }
 sub eex {
   say STDERR ppx(@_);
@@ -65,7 +60,6 @@ use vars qw(%seen %refcnt @dump @fixup %require $TRY_BASE64  $INDENT $LINEWIDTH)
 
 $TRY_BASE64 = 50 unless defined $TRY_BASE64;
 $INDENT = "  " unless defined $INDENT;
-$LINEWIDTH=$ENV{COLUMNS}-2;
 $LINEWIDTH = 60 unless defined $LINEWIDTH;
 
 sub pp
@@ -572,9 +566,83 @@ BEGIN {
     return $out;
   }
 }
-unless(caller) {
-  ddx( substr("deparse",2,5) );
-#      deparse( \&ddx );
-#      ddx( \&ddx );
-};
+1;
+
+=head1 NAME
+
+Nobody::PP - Pretty-printer for Perl data structures
+
+=head1 SYNOPSIS
+
+  use Nobody::PP;
+
+  dd({ key => "value", list => [1, 2, 3] });   # print to STDOUT
+  ee({ key => "value" });                        # print to STDERR
+  my $str = pp({ key => "value" });              # return as string
+  ddx($thing);                                   # print with file:line prefix
+
+=head1 DESCRIPTION
+
+C<Nobody::PP> is a pretty-printer for Perl data structures, providing
+compact, readable output suitable for debugging.
+
+=head1 EXPORTS
+
+C<dd>, C<ddx>, C<ee>, C<eex>, C<pp>, C<ppx>, C<quote>, C<qquote>, C<loc>
+are exported by default.
+
+=head1 FUNCTIONS
+
+=head2 pp( @data )
+
+Returns a string representation of C<@data>.
+
+=head2 dd( @data )
+
+Prints C<pp(@data)> to STDOUT followed by a newline.
+
+=head2 ee( @data )
+
+Prints C<pp(@data)> to STDERR followed by a newline.
+
+=head2 ppx( @data )
+
+Returns C<pp(@data)> prefixed with the caller's file and line number.
+
+=head2 ddx( @data )
+
+Prints C<ppx(@data)> to STDOUT.
+
+=head2 eex( @data )
+
+Prints C<ppx(@data)> to STDERR.
+
+=head2 loc( @strings )
+
+Returns a string of the form C<file:line:@strings> identifying the call site.
+
+=head2 quote( $string )
+
+Returns C<$string> as a single-quoted Perl string literal.
+
+=head2 qquote( $string )
+
+Returns C<$string> as a double-quoted Perl string literal (via C<Data::Dumper>).
+
+=head1 ACKNOWLEDGEMENTS
+
+This module is derived from L<Data::Dump> by Gisle Aas.
+Thank him for the features; blame me for the bugs.
+
+=head1 AUTHOR
+
+Rich Paul, C<< <nobody at cpan.org> >>
+
+=head1 LICENSE
+
+This module is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
+
 1;
