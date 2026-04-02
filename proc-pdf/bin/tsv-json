@@ -8,53 +8,11 @@ use common::sense;
 use autodie;
 use Nobody::Util;
 use JSON::PP;
-use TsvUtil qw(group_find vert_sort words_merge split_lines
-               is_num clean_num parse_xact parse_ivst);
+use TsvUtil qw(group_find vert_sort words_merge);
 use TsvFile;
 use TsvDoc;
 our(@VERSION) = qw( 0 1 0 );
 
-<<<<<<< HEAD
-||||||| parent of b01ea0e (x)
-sub is_num { ($_[0]//'') =~ m{^-?[\d,]*\.?\d+$} }
-sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
-
-sub parse_xact {
-  my($text)=join(' ', map{$_->text//''}@_);
-  my(@tok)=split(/\s+/,$text);
-  return unless @tok >= 2;
-  my($date)=$tok[0];
-  return unless $date =~ m{^\d{1,2}/\d{2}/\d{4}$};
-  my($amount)=$tok[-1];
-  return unless is_num($amount);
-  my($desc)=join(' ',@tok[1..$#tok-1]);
-  return { date=>$date, desc=>$desc, amount=>clean_num($amount) };
-};
-
-sub parse_ivst {
-  my(@w)=@_;
-  my(@nums);
-  while(@w && is_num($w[-1]->text)){
-    unshift @nums, clean_num((pop @w)->text);
-  };
-  return unless @nums >= 3;
-  my($desc)=join(' ', map{$_->text//''}@w);
-  return unless $desc =~ /\w/;
-  return if $desc =~ /^Total\b/i;
-  my($num,$sprice,$total,$basis,$unreal);
-  if    (@nums==5){ ($num,$sprice,$total,$basis,$unreal)=@nums }
-  elsif (@nums==4){ ($sprice,$total,$basis,$unreal)=@nums }
-  elsif (@nums==3){ ($total,$basis,$unreal)=@nums };
-  my(%h)=(desc=>$desc);
-  $h{num}   =$num    if defined $num;
-  $h{sprice}=$sprice if defined $sprice;
-  $h{total} =$total  if defined $total;
-  $h{basis} =$basis  if defined $basis;
-  $h{unreal}=$unreal if defined $unreal;
-  return \%h;
-};
-
-=======
 sub is_num { ($_[0]//'') =~ m{^-?(?:[\d,]+(?:\.\d+)?|\.\d+)$} }
 sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
 sub norm_space { my $s=shift//return ''; $s=~s/\s+/ /g; $s=~s/^\s+|\s+$//g; $s }
@@ -256,7 +214,6 @@ sub parse_ivst {
   return \%h;
 };
 
->>>>>>> b01ea0e (x)
 sub is_account {
   my($text)=@_;
   my(@tok)=split(/\s+/,$text);
@@ -275,9 +232,8 @@ sub statement_file_for {
   return undef;
 }
 
-my($json_dir)=path("json")->mkdir;
-
 sub main {
+  open(STDOUT,">&=1") or die "reopen stdout: $!";
   my(%doc);
   for my $file(sort glob("tsv/*.tsv")){
     next unless -s $file;
@@ -288,22 +244,24 @@ sub main {
     next unless $tsv;
     push(@{$doc{$key}},$tsv);
   };
-<<<<<<< HEAD
-||||||| parent of b01ea0e (x)
-  my(%result);
-=======
   my(%securities,%categories);
   my(%result);
->>>>>>> b01ea0e (x)
   for my $key(sort keys %doc){
     my $d=TsvDoc->new($key,$doc{$key});
     my($statement_file)=statement_file_for($key);
     my(@xacts,@ivsts);
     my($section,$account)=('','');
     for my $page(@{$d->pages}){
-      my(@rows)=map{[words_merge(@$_)]}split_lines(@{$page->word});
+      my(@words)=vert_sort(grep{defined $_->text}@{$page->word});
+      my(@rows);
+      while(@words){
+        my(@row)=group_find(@words);
+        push(@rows,\@row);
+        my(%seen)=map{$_=>1}@row;
+        @words=grep{!$seen{$_}}@words;
+      };
       for my $row(@rows){
-        my(@w)=@$row;
+        my(@w)=words_merge(@$row);
         my($text)=join(' ',map{$_->text}@w);
         if   ($text=~/^TRANSACTIONS/){ $section='xact'; next }
         elsif($text=~/^INVESTMENTS/) { $section='ivst'; next }
@@ -340,15 +298,6 @@ sub main {
         };
       };
     };
-<<<<<<< HEAD
-    my($out)=$json_dir->child("$key.json");
-    $out->spew(JSON::PP->new->pretty->canonical->encode({
-      xact=>\@xacts, ivst=>\@ivsts
-    }));
-    say $out;
-||||||| parent of b01ea0e (x)
-    $result{$key}={ xact=>\@xacts, ivst=>\@ivsts };
-=======
     # accumulate master tables from what we found
     for my $r(@xacts,@ivsts){
       my($sk,$sn)=@{$r}{qw(security_key security_name)};
@@ -364,18 +313,12 @@ sub main {
     );
     $json=JSON::PP->new->pretty->canonical->encode(\%res);
     $path->touchpath->spew($json);
->>>>>>> b01ea0e (x)
   };
-<<<<<<< HEAD
-||||||| parent of b01ea0e (x)
-  print JSON::PP->new->pretty->canonical->encode(\%result);
-=======
   path("json/securities.json")->touchpath->spew(
     JSON::PP->new->pretty->canonical->encode(\%securities)
   );
   path("json/categories.json")->touchpath->spew(
     JSON::PP->new->pretty->canonical->encode([sort keys %categories])
   );
->>>>>>> b01ea0e (x)
 };
 main;
