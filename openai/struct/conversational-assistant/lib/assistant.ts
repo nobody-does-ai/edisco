@@ -1,4 +1,4 @@
-import { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import { ChatCompletionMessageParam, ChatCompletionMessageFunctionToolCall } from 'openai/resources/chat/completions'
 import { SYSTEM_PROMPT } from '@/config/constants'
 import { parse } from 'partial-json'
 import { handleTool } from '@/lib/tools/tools-handling'
@@ -173,7 +173,7 @@ export const processMessages = async () => {
         conversationItems[lastMessageIndex].role === 'assistant'
       ) {
         if (conversationItems[lastMessageIndex].tool_calls) {
-          conversationItems[lastMessageIndex].tool_calls[0].function.arguments =
+          (conversationItems[lastMessageIndex].tool_calls![0] as ChatCompletionMessageFunctionToolCall).function.arguments =
             functionArguments
         } else {
           conversationItems[lastMessageIndex].tool_calls = [

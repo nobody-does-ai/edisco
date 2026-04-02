@@ -2,9 +2,9 @@ import OpenAI from 'openai'
 import { ChatCompletionTool } from 'openai/resources/chat/completions'
 import { tools } from '@/lib/tools/tools'
 import { MODEL } from '@/config/constants'
-const openai = new OpenAI()
 
 export async function POST(request: Request) {
+  const openai = new OpenAI()
   const { messages } = await request.json()
 
   console.log('Received messages:', messages)
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           console.log('Starting OpenAI stream', messages[messages.length - 1])
-          const openaiStream = openai.beta.chat.completions.stream({
+          const openaiStream = openai.chat.completions.stream({
             model: MODEL,
             messages,
             temperature: 0,
