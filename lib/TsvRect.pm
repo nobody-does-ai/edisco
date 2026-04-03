@@ -13,7 +13,6 @@ use Carp::Always;
 use Nobody::PP qw(loc);
 use Nobody::Util;
 use Carp qw(carp cluck croak confess);
-our(@ISA)=qw(Tsv);
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
 our(@prim,%key,@head,%head);
@@ -24,7 +23,8 @@ BEGIN {
 };
 sub dx {
   my($self)=shift;
-  if(@_) {
+  die "usage: rect->dx()" if(@_);
+  {
     my($odx)=$self->dx;
     my($ndx)=shift;
     my($cdx)=($odx-$ndx); 
@@ -38,7 +38,8 @@ sub dx {
 };
 sub dy {
   my($self)=shift;
-  if(@_) {
+  die "usage: rect->dx()" if(@_);
+  {
     my($new)=0.5*shift;
     $new=-$new if $new<0;
     my($avg)=0.5*($self->{y1}+$self->{y2});
@@ -47,38 +48,30 @@ sub dy {
   };
   return $self->{y2}-$self->{y1};
 };
-sub be_defined {
-  my($self)=shift;
-  my($v)=shift;
-  return $v if defined $v;
-  die "not defined";
-};
 sub x1 {
   my($self)=shift;
   die unless $self->isa("TsvRect");
   $self->{x1}=shift if @_;
-   $self->be_defined( $self->{x1} );
+  return $self->{x1};
 };
-
- sub x2 {
-   my($self)=shift;
-   $self->{x2}=shift if @_;
-  $self->{x2};
-   $self->be_defined( $self->{x2} );
- };
-
- sub y1 {
-   my($self)=shift;
-   $self->{y1}=shift if @_;
-  $self->{y1};
-   $self->be_defined( $self->{y1} );
- };
-
- sub y2 {
-   my($self)=shift;
-   $self->{y2}=shift if @_;
-   $self->be_defined( $self->{y2} );
- };
+sub x2 {
+  my($self)=shift;
+  die unless $self->isa("TsvRect");
+  $self->{x2}=shift if @_;
+  return $self->{x2};
+};
+sub y1 {
+  my($self)=shift;
+  die unless $self->isa("TsvRect");
+  $self->{y1}=shift if @_;
+  return $self->{y1};
+};
+sub y2 {
+  my($self)=shift;
+  die unless $self->isa("TsvRect");
+  $self->{y2}=shift if @_;
+  return $self->{y2};
+};
 
 BEGIN {
   @prim = ( "x1 l left", "x2 r right", "y1 t top", "y2 b bottom" );

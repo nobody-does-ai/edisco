@@ -5,7 +5,7 @@ use TsvGroup;
 use common::sense;
 our(@ISA)=qw(TsvGroup);
 use vars qw( $d $y $q $p $e );
-use TsvUtil qw(tsv_parse);
+use TsvUtil;
 use TsvWord;
 our(%page);
 our($DEBUG);
@@ -15,7 +15,7 @@ sub new {
   my($class)=shift;
   my($path)=shift;
   my $self=$class->SUPER::new($path,tsv_parse($path));
-  TsvUtil->ref_cnt( @{$self->word} );
+  ref_cnt( @{$self->word} );
   $self->{path}=$path;
   bless($self,$class);
 }

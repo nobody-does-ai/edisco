@@ -4,6 +4,8 @@ use lib "lib";
 use Nobody::Util;
 use Tsv;
 use Scalar::Util qw(blessed);
+require Exporter;
+Exporter->import;
 our(@EXPORT);
 BEGIN {
   @EXPORT= qw(
@@ -11,7 +13,7 @@ BEGIN {
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
   tsv_to_tsv
-  paths trace
+  paths trace ref_cnt
   vert_hash_cmp vert_cmp vert_sort group_find words_merge
   split_lines is_num clean_num parse_xact parse_ivst
   );
@@ -233,6 +235,7 @@ sub tsv_parse {
   \@word;
 };
 sub ref_cnt {
+  die if grep {!ref} @_;
   local(@_)=@_;
   my(%ref);
   for(@_){
