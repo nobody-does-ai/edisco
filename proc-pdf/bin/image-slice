@@ -37,7 +37,7 @@ sub main {
   for my $base(@_){
     my($file)=TsvFile->new("tsv/$base.tsv");
     TsvUtil->ref_cnt(@{$file->word});
-    eex($file->word);
+    eex(grep { !ref } $file->word);
     my(@word)=grep { $_->level==5 } @{$file->word};
   };
   exit(0);
