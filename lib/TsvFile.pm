@@ -15,6 +15,7 @@ sub new {
   my($class)=shift;
   my($path)=shift;
   my $self=$class->SUPER::new($path,tsv_parse($path));
+  TsvUtil->ref_cnt( @{$self->word} );
   $self->{path}=$path;
   bless($self,$class);
 }

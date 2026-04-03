@@ -232,6 +232,14 @@ sub tsv_parse {
   @word=TsvWord->from(@word);
   \@word;
 };
+sub ref_cnt {
+  local(@_)=@_;
+  my(%ref);
+  for(@_){
+    $ref{ref($_)}++;
+  };
+  eex(\%ref);
+};
 sub pdf_page_count {
   trace(@_);
   my ($pdf) = @_;

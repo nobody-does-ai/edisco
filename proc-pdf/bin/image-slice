@@ -1,0 +1,54 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use autodie;
+use Nobody::Util;
+use TsvFile;
+use GD ;
+use GD::Image;
+use common::sense;
+use GDUtil;
+sub load_data() {
+  my(%base,@png,@tsv);
+  for(map { [ $_,path($_)->basename(".tsv"),m{([^.]*$)}] } glob("tsv/20*3-Q?-???.tsv")){
+    $base{$_->[1]}{$_->[2]}=$_->[0];
+  };
+  for(map { [ $_,path($_)->basename(".png"),m{([^.]*$)}] } glob("png/20*Q?-???.png")){
+    $base{$_->[1]}{$_->[2]}=$_->[0];
+  };
+  for(keys %base){
+    delete $base{$_} unless 2==keys %{$base{$_}};
+  };
+  \%base;
+};
+our(%base);
+sub load_tsv {
+};
+sub main {
+  *base=load_data;
+  my(@base)=keys %base;
+  while(4>@_ and @base){
+    push(@_,splice(@base,int(rand(@base)),1));
+  };
+  for my $base(@_){
+    my($file)=TsvFile->new("tsv/$base.tsv");
+    TsvUtil->ref_cnt(@{$file->word});
+    eex($file->word);
+    my(@word)=grep { $_->level==5 } @{$file->word};
+  };
+  exit(0);
+  for my $base(splice @_){
+    my $source = GD::Image->newFromPng("png/$base.png",0) or die "Can't load";
+    push @_, extract_slice($source, 500, 100);
+  }
+  my($slice)=stack_slices(@_);
+  eex($slice);
+  open my $out, '>:raw', 'slice.png' or die $!;
+  print $out $slice->png;
+  close $out;
+}
+main;
