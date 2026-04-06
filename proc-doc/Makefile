@@ -1,0 +1,2 @@
+all:
+	node giles.js
