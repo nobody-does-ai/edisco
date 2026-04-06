@@ -168,8 +168,14 @@ sub parse_xact {
   my($business_date)=$tok[0];
   return unless $business_date =~ m{^\d{1,2}/\d{2}/\d{4}$};
   my($amount)=$tok[-1];
-  return unless is_num($amount);
-  my($desc)=norm_space(join(' ',@tok[1..$#tok-1]));
+  my($desc);
+  if (@tok >= 3 && $tok[-2] =~ /ACCOUNT/i && $amount =~ /^\d{6,7}$/) {
+    $desc = norm_space(join(' ',@tok[1..$#tok]));
+    $amount = undef;
+  } else {
+    return unless is_num($amount);
+    $desc = norm_space(join(' ',@tok[1..$#tok-1]));
+  }
   my(%x)=(
     business_date => $business_date,
     description_raw => $desc,
@@ -235,7 +241,8 @@ sub statement_file_for {
 sub main {
   open(STDOUT,">&=1") or die "reopen stdout: $!";
   my(%doc);
-  for my $file(sort glob("tsv/*.tsv")){
+  my(@files) = @ARGV ? @ARGV : glob("tsv/*.tsv");
+  for my $file(sort @files){
     next unless -s $file;
     my($p)=path($file);
     my($key)=($file=~m{(\d\d\d\d-Q\d)})[0];
@@ -263,8 +270,8 @@ sub main {
       for my $row(@rows){
         my(@w)=words_merge(@$row);
         my($text)=join(' ',map{$_->text}@w);
-        if   ($text=~/^TRANSACTIONS/){ $section='xact'; next }
-        elsif($text=~/^INVESTMENTS/) { $section='ivst'; next }
+        if   ($text=~/^TRANSACTIONS/i || $text=~/^Date\s+Description\s+Amount/i){ $section='xact'; next }
+        elsif($text=~/^INVESTMENTS/i  || $text=~/^Number/i){ $section='ivst'; next }
         next unless $section;
         if($section eq 'xact'){
           if(@xacts && is_xact_continuation($text)){

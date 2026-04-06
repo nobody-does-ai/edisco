@@ -13,8 +13,32 @@ use GD ;
 use GD::Image;
 use common::sense;
 use GDUtil;
+our(%base);
+use subs qw(re);
+BEGIN { @ARGV=qw( Shirley ) unless @ARGV };
+my(@re) = map { qr{$_} } splice(@ARGV);
+BEGIN {
+  *re=sub {
+    my($w)=shift;
+    my($t)=$w->text;
+    for(@re){
+      return 1 if $t=~m{$_};
+    };
+    return 0;
+  };
+}
+sub match {
+  return grep { re($_) } @_;
+};
+sub load_tsv {
+  for my $base(keys %base) {
+    my($file)=TsvFile->new($base{$base}{tsv});
+    $base{$base}{file}=$file;
+    $base{$base}{mat}=[ match(grep { $_->level==5 } @{$file->word}) ];
+  };
+};
 sub load_data() {
-  my(%base,@png,@tsv);
+  my(@png,@tsv);
   for(map { [ $_,path($_)->basename(".tsv"),m{([^.]*$)}] } glob("tsv/*.tsv")){
     $base{$_->[1]}{$_->[2]}=$_->[0];
   };
@@ -22,47 +46,106 @@ sub load_data() {
     $base{$_->[1]}{$_->[2]}=$_->[0];
   };
   for(keys %base){
-    delete $base{$_} unless 2==keys %{$base{$_}};
+    delete $base{$_} unless 2<=keys %{$base{$_}};
   };
+  load_tsv();
   \%base;
 };
-our(%base);
-sub load_tsv {
+sub between {
+  my($min,$y1,$y2,$max)=@_;
+  return 0 if(max($min,$max)<min($y1,$y2));
+  return 0 if(min($min,$max)>max($y1,$y2));
+  return 1;
 };
 sub rows {
-  my($top,$bot,@row);
-  my(%rows);
-  for(sort { $a->y1 <=> $b->y1 } @_){
-    say $_->y1;
-  };
+  local(@_)=@_;
+  our(@row);
+  @_=sort { $a->y1 <=> $b->y1 } @_;
+  $DB::single=1;
   while(@_) {
+    local(*row)=$row[@row]=[shift];
+    my($y1)=min(map{$_->y1}@row);
+    my($y2)=max(map{$_->y2}@row);
+    while(@_) {
+      eex({row=>\@row,_=>scalar(@_)});
+      my(@new)=grep { between($y1,$_[$_]->y1,$_[$_]->y2,$y2) } keys @_ ;
+      last unless @new;
+      push(@row,@_[@new]);
+      @_[@new]=();
+    };
   };
-  \%rows;
+};
+sub slices {
+  my(@slices);
+  for my $base(keys %base){
+    my($match)=$base{$base}{mat};
+    for(@$match) {
+      my(%row);
+      $row{$_}=$_;
+      my($n)=0;
+      my($y1,$y2);
+      my(@word)=@{$base{$base}{file}->word};
+      while($n<%row) {
+        $n=%row;
+        $y1=min(map{$_->y1}values %row);
+        $y2=max(map{$_->y2}values %row);
+        for(grep { between($y1,$_->y1,$y2) or between($y1,$_->y2,$y2) } @word) {
+          $row{$_}=$_;
+        };
+      };
+      our($img);
+      if(%row){
+        local(*img) = \$base{$base}->{img};
+        $img //= GD::Image->newFromPng("png/$base.png",0) or die "Can't load png/$base.png";
+        push(@slices,extract_slice($img,$y1,$y2));
+      };
+    };
+  };
+  eex({slices=>scalar(@slices)});
+  @slices;
+};
+sub batch_slices {
+  local(@_,$_)=@_;
+  my($tot,@all)=0;
+  while(@_){
+    my(@bat);
+    $_=shift;
+    while(($tot+$_->height)<3600){
+      push(@bat,$_);
+      $tot+=$_->height;
+    };
+    push(@all,[@bat]);
+  };  
+  @all;
 };
 sub main {
   *base=load_data;
   my(@base)=keys %base;
-  while(4>@_ and @base){
-    push(@_,splice(@base,int(rand(@base)),1));
+  for(@base) {
+    delete $base{$_} unless 3<= keys %{$base{$_}};
   };
-  our(%rows);
-  for my $base(@_){
-    my($file)=TsvFile->new("tsv/$base.tsv");
-    ref_cnt(@{$file->word});
-    my(@word)=grep { $_->level==5 } @{$file->word};
-    say scalar(@word);
-    eex( rows(@word) );
+  @base=keys %base;
+  my(@match)=grep { @{$base{$_}{mat}} } @base;
+  die "no matches" unless @match;
+  my(@slice)=slices();
+  die "no slices" unless @slice;
+  my($width)=max(map{$_->width}@slice);
+  my(@all)=batch_slices(@slice);
+  for(@all) {
+    say pp({batch=>scalar(@$_)});
   };
-  eex(\%rows);
-  exit(0);
-  for my $base(splice @_){
-    my $source = GD::Image->newFromPng("png/$base.png",0) or die "Can't load";
-    push @_, extract_slice($source, 500, 100);
-  }
-  my($slice)=stack_slices(@_);
-  eex($slice);
-  open my $out, '>:raw', 'slice.png' or die $!;
-  print $out $slice->png;
-  close $out;
+  my($idx)=100;
+  while(@all) {
+    sleep(1);
+    eex(all=>[map { 0+@$_ } @all]);
+    @slice=(map { @$_ } shift @all);
+    my($slice)=stack_slices(@slice);
+    unless($slice) {
+      warn "no matching slices";
+      return;
+    };
+    eex($slice);
+    path(join('.','slice',$idx++,'png'))->spew_raw($slice->png);
+  };
 }
 main;

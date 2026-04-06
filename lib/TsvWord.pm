@@ -26,6 +26,13 @@ sub level {
   my($self)=shift;
   return $self->{level};
 };
+BEGIN {
+  no strict 'refs';
+  for my $n(qw( y1 y2 x1 x2 dx xy cx xy )){
+    *{$n}=sub { shift->rect->$n(@_) };
+  }
+};
+my(@bad);
 sub new {
   local(@_)=@_;
   my($class)=class(shift);
@@ -34,12 +41,23 @@ sub new {
   for(qw(left top width height)){
     $rect{$_}=delete$data{$_};
   };
+  unless(defined $data{text}){
+#        eex(\%data);
+    return undef;
+  };
   for(keys %data){
     delete $data{$_} unless defined $data{$_};
   };
   my($self)={ %data };
   $self->{rect}=TsvRect->new( %rect );
+  if($self->{level}==5) {
+    unless($self->{text} =~ /\S/){
+      push(@bad,$self);
+      return undef;
+    };
+  };
   bless($self,$class);
+  $self;
 };
 sub from {
   use Carp qw( croak cluck carp confess );
@@ -47,9 +65,11 @@ sub from {
   my($class)=class(shift);
   for(@_) {
     next if(safe_isa($_,'TsvWord'));
+    next unless defined and m{\S};
     die "???" unless ref($_) eq "HASH";
     $_=TsvWord->new($_);
   };
+  @_=grep { defined } @_;
   return @_;
 };
 sub text {

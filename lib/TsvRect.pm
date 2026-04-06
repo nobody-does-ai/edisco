@@ -24,28 +24,11 @@ BEGIN {
 sub dx {
   my($self)=shift;
   die "usage: rect->dx()" if(@_);
-  {
-    my($odx)=$self->dx;
-    my($ndx)=shift;
-    my($cdx)=($odx-$ndx); 
-    my($ox1,$ox2,$nx1,$nx2);
-    $ox1=$self->x1;
-    $ox2=$self->x2;
-    $nx1=$ox1+$cdx/2;
-    $nx2=$ox2-$cdx/2;
-  };
   return $self->{x2}-$self->{x1};
 };
 sub dy {
   my($self)=shift;
-  die "usage: rect->dx()" if(@_);
-  {
-    my($new)=0.5*shift;
-    $new=-$new if $new<0;
-    my($avg)=0.5*($self->{y1}+$self->{y2});
-    $self->{y1}=int($avg-$new);
-    $self->{y2}=int($avg+$new);
-  };
+  die "usage: rect->dy()" if(@_);
   return $self->{y2}-$self->{y1};
 };
 sub x1 {

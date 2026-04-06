@@ -8,7 +8,7 @@ use common::sense;
 use autodie;
 use JSON::PP;
 use Nobody::Util;
-
+use TsvDB;
 sub read_json;
 sub write_html;
 sub html;
@@ -17,46 +17,50 @@ sub render_table;
 sub rows_for;
 sub display_val;
 sub keep_row;
-my(@ivest_cols,@xact_cols);
+my(@ivest_cols,@xact_cols,@idb_cols,@xdb_cols);
 my($NimCrut)='1603387';
 @ARGV=glob("json/202[0-9]-Q[0-9]*.json") unless @ARGV;
 main(@ARGV);
 exit(0);
 sub main {
   my(@nimcrut);
-  my(%ivest);
-  my(%nimkeys);
-  for my $json_file(sort @_){
-    my($html_file)=$json_file;
-    for($html_file){
-      s{json}{html}g;
-    };
+  @_=sort map { path($_)->basename(".json") } @_;
+  my(%data);
+  our(@xact,@ivest);
+  for my $json_file(map { "json/$_.json" } sort @_){
     my($period)=map { m{/(.*)[.]} } $json_file;
     my($data)=read_json($json_file);
-    my(@xact)=rows_for($data,'transactions');
-    my(@ivest)=rows_for($data,'investments');
-    my($xact)={
-      title=>"transactions",
-      cols=>\@xact_cols,
-      rows=>\@xact,
-      period=>$period,
-    };
-    my($ivest)={
-      title=>'investments',
-      cols=>\@ivest_cols,
-      rows=>\@ivest,
-      period=>$period,
-    };
-    write_html( $html_file, $ivest, $xact);
-    push(@nimcrut,$ivest);
-    push(@nimcrut,$xact);
+    push(@xact,rows_for($data,'transactions'));
+    push(@ivest,rows_for($data,'investments'));
   }
-  my(@ivest);
-  $nimcrut[0]{ivest}{rows}=\@ivest;
-
-  write_html("nimcrut.html", \@nimcrut);
+  @xact=xrekey(@xact);
+  @ivest=irekey(@ivest);
+  TsvDB->insert("inv",[@idb_cols],[@ivest]);
+  TsvDB->insert("xact",[@xdb_cols],[@xact]);
 }
-
+my(%xli,%xlx);
+sub irekey {
+  for (keys @_){
+    my $ivest=$_[$_];
+    my(%ivest);
+    for(keys %xli){
+      $ivest{$xli{$_}}=delete $ivest->{$_};
+    };
+    $_[$_]=\%ivest;
+  };
+  @_;
+};
+sub xrekey {
+  for (keys @_){
+    my($xact)=$_[$_];
+    my(%xact);
+    for(keys %xlx){
+      $xact{$xlx{$_}}=delete $xact->{$_};
+    };
+    $_[$_]=\%xact;
+  };
+  @_;
+};
 sub read_json {
   my($json_file)=@_;
   my($json_text)=path($json_file)->slurp;
@@ -70,102 +74,7 @@ sub rows_for {
   return @rows;
 }
 
-sub write_html {
-  my($file,$title)=splice(@_,0,1);
-  ($title)=map { path($_)->basename(".html") } $file;
-  my($text)=qq{
-  <!doctype html>
-  <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>@{[html($title)]}</title>
-    <style>
-      body { font-family: sans-serif; margin: 1rem; }
-      h1, p { margin: 0 0 1rem; }
-      table { width: 100%; }
-      th {
-        position: sticky;
-        top: 0;
-        background: #eef;
-        border: solid blue 2px;
-        padding: 4px;
-        text-align: left;
-      }
-      tbody tr:nth-child(even) { background: #f8fbff; }
-      td.wrap { min-width: 24rem; }
-    </style>
-  </head>
-  <body>
-    <h1>@{[html($title)]}</h1>
-  };
-my($ivest,$xact)=splice(@_,0,2);
-if( defined($ivest) and defined($xact) )
-{
-  for( $ivest, $xact ) {
-    my(%data)=%{$_};
-    $text.=render_table($data{cols},$data{rows});
-  };
-} elsif ( defined($ivest) ) {
-  for(@{$ivest}){
-    $text.=render_table($_->{cols},$_->{rows});
-  };
-};
-$text=qq{$text
-</body>
-</html>
-};
-  path($file)->touchpath->spew($text);;
-}
 
-sub render_table {
-  my($cols,$rows)=@_;
-  my($out)="<table>\n<thead><tr>";
-  for my $col(@$cols){
-    $out.="<th>".html($col)."</th>";
-  };
-  $out.="</tr></thead>\n<tbody>\n";
-  for my $row(@$rows){
-    $out.="<tr>";
-    for my $col(@$cols){
-      $out.=td($col,$row->{$col});
-    };
-    $out.="</tr>\n";
-  };
-  $out.="</tbody>\n</table>\n";
-  return $out;
-}
-
-sub td {
-  my($col,$val)=@_;
-  $val='' unless defined $val;
-  $val=display_val($col,$val);
-  my($attr)=($col =~ /(?:amount|shares|price|value|basis|gain|rate|units)\z/) ? ' n=""' : ' t=""';
-  my($neg)=($val =~ /^-/) ? ' neg=""' : '';
-  my($wrap)=($col =~ /(?:description_raw|statement_file|security_name)\z/) ? ' class="wrap"' : '';
-  return sprintf('<td%s%s%s>%s</td>', $attr, $neg, $wrap, html($val));
-}
-
-sub display_val {
-  my($col,$val)=@_;
-  return $val unless $col eq 'account_number';
-  return 'NimCrut' if $val eq $NimCrut;
-  return $val;
-}
-
-sub keep_row {
-  my($row)=@_;
-  return 0 unless $row;
-  return ($row->{account_number}//'') eq $NimCrut;
-}
-
-sub html {
-  local($_)=shift//'';
-  s/&/&amp;/g;
-  s/</&lt;/g;
-  s/>/&gt;/g;
-  return $_;
-}
 INIT {
   @ivest_cols= qw(
   statement_id   account_number  category
@@ -173,10 +82,24 @@ INIT {
   market_value   cost_basis      unrealized_gain
   security_key                   
   );
+  @idb_cols= qw(
+  qtr   acct  cat
+  tick  nshares sharep
+  value   basis      unreal
+  key                   
+  );
+  %xli=map { $ivest_cols[$_], $idb_cols[$_] } keys @idb_cols;
   @xact_cols= qw(
   statement_id  account_number        business_date
   kind          counterparty_account  security_name
   units         unit_price            rate
   cash_amount   description_raw       
   );
+  @xdb_cols= qw(
+  qtr  acct        date
+  kind          cparty  name
+  units         uprice            rate
+  total   descr       
+  );
+  %xlx=map { $xact_cols[$_], $xdb_cols[$_] } keys @xdb_cols;
 };

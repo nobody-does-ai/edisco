@@ -241,7 +241,7 @@ sub ref_cnt {
   for(@_){
     $ref{ref($_)}++;
   };
-  eex(\%ref);
+  \%ref;
 };
 sub pdf_page_count {
   trace(@_);
