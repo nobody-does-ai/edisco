@@ -3,7 +3,7 @@
 eval 'exec perl -x -wS $0 ${1+"$@"}'
 if 0;
 $|++;
-use lib "lib";
+use lib "../lib";
 use Nobody::Util;
 
 use common::sense;
@@ -37,21 +37,12 @@ sub rows {
     };
   };
 };
-sub make_file {
-  local(@_)=@_;
-  my($base,@type)=@_;
-  for(map { $_, join("",$_,"/",$base,".",$_) } @type){
-    $_=path($_);
-    $_=TsvFile->new({file=>path($_)});
-  };
-};
-sub make_set {
-  local(@_)=@_;
-  map { { base=>$_, make_file($_, qw( tsv png ) ) } } @_;
-};
 my($tsv);
 sub main {
-  my(@set)=make_set(glob("tsv/*.tsv"));
-  eex(@_);
+  @_=sort(glob("tsv/*.tsv"));
+  for(@_){
+    eex(TsvFile->new({file=>path($_)}));
+    last;
+  };
 };
 main;

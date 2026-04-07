@@ -7,7 +7,6 @@ use Nobody::Util;
 our(@ISA)=qw(Tsv);
 sub new {
   local(@_)=@_;
-  eex(\@_);
   die "usage: TsvGroup::new( class hash ) (got: ".pp(@_).")" unless @_==2 and ref($_[1]) eq 'HASH';
   my($class)=class(shift);
   my($hash)=shift;

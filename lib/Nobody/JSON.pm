@@ -8,6 +8,7 @@ use JSON::XS qw( encode_json decode_json );
 our @ISA = qw(JSON::XS );
 our $VERSION = '0.01';
 sub json;
+use Nobody::JSON;
 our @EXPORT    = qw( json );
 our @EXPORT_OK = qw( encode_json decode_json );
 our %EXPORT_TAGS = ( all => [ @EXPORT_OK ] );
@@ -24,13 +25,17 @@ INIT {
     $self->encode(1);
     $self->pretty;
     $self->allow_nonref;
+    $self->allow_blessed;
+    $self->convert_blessed;
     $self;
   }; 
 };
 sub json {
   local(@_)=@_;
   state($json);
-  $json//=Nobody::JSON->new;
+  unless(defined($json)){
+    $json=
+  };
   $json;
 };
 sub load {
@@ -76,12 +81,14 @@ sub encode {
   local(@_)=@_;
   die "you can't do that!" unless safe_can($_[0],"encode");
   my($self)=shift;
+  eex(\@_);
   $self->SUPER::encode(@_);
 };
 sub decode {
-  local(@_)=@_;
-  die "you can't do that!" unless safe_can($_[0],"decode");
+  local($_,@_)=@_;
   my($self)=shift;
+  eex($self);
+  die "you can't do that!" unless safe_can($_[0],"decode");
   $self->SUPER::decode("@_");
 }
 if(0){
