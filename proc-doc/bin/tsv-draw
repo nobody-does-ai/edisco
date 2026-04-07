@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+if 0;
+$|++;
+use lib "lib";
+use Nobody::Util;
+
+use common::sense;
+use autodie;
+use TsvUtil;
+use TsvFile;
+use GD ;
+use GD::Image;
+use common::sense;
+use GDUtil;
+our(%base);
+use subs qw(re);
+sub between {
+  my($min,$y1,$y2,$max)=@_;
+  return 0 if(max($min,$max)<min($y1,$y2));
+  return 0 if(min($min,$max)>max($y1,$y2));
+  return 1;
+};
+sub rows {
+  local(@_)=@_;
+  our(@row);
+  @_=sort { $a->y1 <=> $b->y1 } @_;
+  my(@cnt);
+  my(@wrd);
+  for my $i(keys @_){
+    my($w)=$_[$i];
+    my($y1,$y2)=map { $w->$_->() } qw(y1 y2 );
+    for(my $j=$y1; $j<$y2; $j++) {
+      $cnt[$j]++;
+      $wrd[$i]++;
+    };
+  };
+};
+sub make_file {
+  local(@_)=@_;
+  my($base,@type)=@_;
+  for(map { $_, join("",$_,"/",$base,".",$_) } @type){
+    $_=path($_);
+    $_=TsvFile->new({file=>path($_)});
+  };
+};
+sub make_set {
+  local(@_)=@_;
+  map { { base=>$_, make_file($_, qw( tsv png ) ) } } @_;
+};
+my($tsv);
+sub main {
+  my(@set)=make_set(glob("tsv/*.tsv"));
+  eex(@_);
+};
+main;

@@ -3,35 +3,35 @@ use lib 'lib';
 use Nobody::Util;
 use TsvGroup;
 use common::sense;
+use Path::Tiny;
 our(@ISA)=qw(TsvGroup);
 use vars qw( $d $y $q $p $e );
 use TsvUtil;
 use TsvWord;
-our(%page);
-our($DEBUG);
-*DEBUG=\$Tsv::DEBUG;
+our($file);
 sub new {
   local(@_)=@_;
+  die "usage: class->new({})" unless @_==2 and ref($_[1])=='HASH';
   my($class)=shift;
-  my($path)=shift;
-  my $self=$class->SUPER::new($path,tsv_parse($path));
-  ref_cnt( @{$self->word} );
-  $self->{path}=$path;
+  my($hash)=shift;
+  my $self=$class->SUPER::new($hash);
+  $hash->{file}=path($hash->{file});
   bless($self,$class);
+  $self->load;
+  $self;
 }
-sub lines {
+sub load {
   my($self)=shift;
-  $self->{path}->lines;
+  local(@_)=$self->{file}->lines;
+  @_=map { [ split ] } @_;
+  @_=map { TsvWord->new(
+};
+sub word {
+  my($self)=shift;
+  return ($self->{word});
 };
 sub rect {
   my($self)=$_[0];
   $self->{rect};
 };
-sub path {
-  my($self)=$_[0];
-  $self->{path};
-};
-#    sub selfpp {
-#      sprintf "%s(%s)", ref($_[0]), $_[0]->tostring;
-#    };
 1;

@@ -41,15 +41,11 @@ sub new {
   for(qw(left top width height)){
     $rect{$_}=delete$data{$_};
   };
-  unless(defined $data{text}){
-#        eex(\%data);
-    return undef;
-  };
   for(keys %data){
     delete $data{$_} unless defined $data{$_};
   };
   my($self)={ %data };
-  $self->{rect}=TsvRect->new( %rect );
+  $self->{rect}=TsvRect->new( \%rect );
   if($self->{level}==5) {
     unless($self->{text} =~ /\S/){
       push(@bad,$self);
@@ -58,19 +54,6 @@ sub new {
   };
   bless($self,$class);
   $self;
-};
-sub from {
-  use Carp qw( croak cluck carp confess );
-  local(@_)=@_;
-  my($class)=class(shift);
-  for(@_) {
-    next if(safe_isa($_,'TsvWord'));
-    next unless defined and m{\S};
-    die "???" unless ref($_) eq "HASH";
-    $_=TsvWord->new($_);
-  };
-  @_=grep { defined } @_;
-  return @_;
 };
 sub text {
   return shift->{text};

@@ -1,0 +1,27 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+our(@VERSION) = qw( 0 1 0 );
+# Header installed by /opt/bin/mkperl
+#    sub interpolate {
+#      die unless 2==@_;
+#      my($vars)=pop;
+
+my($str)="{{";
+
+loocal(@_)=split('{{');
+#    
+#      my $i=0;
+#      while(++$i<@_) {
+#        next unless $_[$i-1]eq'{{'
+#        next unless $_[$i+1]eq'}}';
+#        next unless $_[$i] =~ m{[a-z][a-z0-9]*}i;
+#        splice($i,0,3)
+#      };
+#    };

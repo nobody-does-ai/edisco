@@ -1,18 +1,13 @@
 package TsvRect;
 use common::sense;
-use lib "lib";
-BEGIN {
-  use FindBin qw($Script $Bin);
-  use lib "$Bin/../lib";
-};
 our(%key);
-use Tsv;
-use Exporter qw(import);
-use common::sense;
+use Carp qw(carp cluck croak confess);
 use Carp::Always;
+use Exporter qw(import);
 use Nobody::PP qw(loc);
 use Nobody::Util;
-use Carp qw(carp cluck croak confess);
+use Tsv;
+use common::sense;
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
 our(@prim,%key,@head,%head);

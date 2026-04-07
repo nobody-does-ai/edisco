@@ -1,31 +1,98 @@
 package Nobody::JSON;
 use FindBin qw($RealBin);
+use Carp::Always;
 use lib "$RealBin/../lib", "$RealBin/lib";
 use Nobody::Auto qw( common::sense JSON::XS );
 use common::sense;
-require Exporter;
-our @ISA = qw(Exporter);
+use JSON::XS qw( encode_json decode_json );
+our @ISA = qw(JSON::XS );
 our $VERSION = '0.01';
-
-our @EXPORT    = qw( encode_json decode_json );
-our @EXPORT_OK = qw( encode_json decode_json json_encode json_decode );
+sub json;
+our @EXPORT    = qw( json );
+our @EXPORT_OK = qw( encode_json decode_json );
 our %EXPORT_TAGS = ( all => [ @EXPORT_OK ] );
-
-use JSON::XS qw( decode_json );
 
 # Lazy-initialised encoder configured for maximum readability:
 # - ascii: escape non-ASCII so output is safe in any context
 # - pretty: human-readable indented output
 # - allow_nonref: encode bare scalars, not just objects/arrays
-my $coder;
-sub _coder { $coder //= JSON::XS->new->ascii->pretty->allow_nonref }
-
-sub encode_json { _coder()->encode(shift) }
-
-# Aliases matching the JSON::XS naming convention
-*json_encode = \&encode_json;
-*json_decode = \&decode_json;
-
+INIT {
+  sub new {
+    my($class)=class(shift);
+    my($self)=$class->SUPER::new;
+    $self->ascii;
+    $self->encode(1);
+    $self->pretty;
+    $self->allow_nonref;
+    $self;
+  }; 
+};
+sub json {
+  local(@_)=@_;
+  state($json);
+  $json//=Nobody::JSON->new;
+  $json;
+};
+sub load {
+  die "you can't do that!" unless safe_can($_[0],"load");
+  die "usage: json->load( *FH | path(x) | '/etc/passwd'" unless @_==1;
+  local(@_)=@_;
+  my($self)=shift;
+  my($src)=shift;
+  if(safe_can($src,"readline")){
+    @_=<$src>;
+  } elsif ( safe_can($src,"slurp") ) {
+    @_=$src->slurp;
+  } elsif ( ref($src) ) {
+    die "don't know how to count this blessing";
+  } else {
+    @_=path($src)->slurp;
+  };
+  json_decode("@_");
+};
+sub save {
+  die "you can't do that!" unless safe_can($_[0],"save");
+  my($self)=shift;
+  my($src)=shift;
+  die "noo many args" if @_>1;
+  local($_)=$self->encode(shift);
+  if(safe_can($src,"print")){
+    $src->print("@_");
+  } elsif ( safe_can("spew") ) {
+    $src->spew(@_);
+  }
+};
+sub json_encode {
+  local(@_)=@_;
+  json->encode(@_);
+};
+sub json_decode {
+  local(@_)=@_;
+  json->decode(@_);
+};
+sub encode_json($) { json->encode(shift) }
+sub decode_json($) {  json->decode(shift) }
+sub encode {
+  local(@_)=@_;
+  die "you can't do that!" unless safe_can($_[0],"encode");
+  my($self)=shift;
+  $self->SUPER::encode(@_);
+};
+sub decode {
+  local(@_)=@_;
+  die "you can't do that!" unless safe_can($_[0],"decode");
+  my($self)=shift;
+  $self->SUPER::decode("@_");
+}
+if(0){
+  unless(caller){
+    say STDERR ( "b4" );
+    use Nobody::Util;
+    my($json)=Nobody::JSON->json();
+    say($json->encode({ []=>[] }));
+    say STDERR ( "ok" );
+  };
+};
 1;
 
 =head1 NAME

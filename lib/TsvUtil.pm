@@ -1,9 +1,9 @@
 package TsvUtil;
+use Nobody::Util;
+use Scalar::Util qw(blessed);
+use Tsv;
 use common::sense;
 use lib "lib";
-use Nobody::Util;
-use Tsv;
-use Scalar::Util qw(blessed);
 require Exporter;
 Exporter->import;
 our(@EXPORT);
@@ -15,7 +15,7 @@ BEGIN {
   tsv_to_tsv
   paths trace ref_cnt
   vert_hash_cmp vert_cmp vert_sort group_find words_merge
-  split_lines is_num clean_num parse_xact parse_ivst
+  is_num clean_num parse_xact parse_ivst
   );
 };
 sub group_text {
@@ -121,17 +121,17 @@ sub words_merge {
   };
   return @out;
 };
-sub split_lines {
-  my(@words)=vert_sort(grep{defined $_->text}@_);
-  my(@rows);
-  while(@words){
-    my(@row)=group_find(@words);
-    push(@rows,\@row);
-    my(%seen)=map{$_=>1}@row;
-    @words=grep{!$seen{$_}}@words;
-  };
-  return @rows;
-};
+#    sub split_lines {
+#      my(@words)=vert_sort(grep{defined $_->text}@_);
+#      my(@rows);
+#      while(@words){
+#        my(@row)=group_find(@words);
+#        push(@rows,\@row);
+#        my(%seen)=map{$_=>1}@row;
+#        @words=grep{!$seen{$_}}@words;
+#      };
+#      return @rows;
+#    };
 sub is_num { ($_[0]//'') =~ m{^-?[\d,]*\.?\d+$} }
 sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
 sub parse_xact {
@@ -216,26 +216,19 @@ sub trace {
   say STDERR $msg;
 };
 sub tsv_parse {
+  local(@_)=@_;
+  my(@pair,@cols,@rows,@vals,@word);
   my $path=path(shift);
-  my(@rows)=$path->lines ;
-  my(@cols)=map { split } shift(@rows);
-  my(@word);
-  for(@rows) {
-    my(@vals)=split;
-    my(@pair);
-    die ppx(
-      \@vals, \@cols
-    ) if @cols<@vals;
-    for(my $i=0;$i<@cols;$i++) {
-      push(@pair,$cols[$i],@vals[$i])
-    };
-    push(@word,{ @pair });
-  };
-  @word=TsvWord->from(@word);
+  @word=$path->lines ;
+  @cols=map { split } shift(@rows);
+  @pair=map { $cols[$_], $vals[$_] } keys @cols;
+  push(@word,{ @pair });
+  say STDERR pp(scalar(@word),"words");
   \@word;
 };
 sub ref_cnt {
-  die if grep {!ref} @_;
+  local(@_)=@_;
+  die pp([@_]) if grep {!ref} @_;
   local(@_)=@_;
   my(%ref);
   for(@_){
@@ -329,7 +322,7 @@ sub run {
   if(my $pid=fork) {
     my($key);
     while(($key=waitpid(0,0))>1) {
-      say "$key returned $?";
+      say STDERR "$key returned $?";
       return if $key==$pid;      
     };
     die "waitpid: $key";
@@ -337,13 +330,14 @@ sub run {
   my($if)=shift;
   my($of)=shift;
   my($tf)=path($of.".tmp");
+  system("ls -l /proc/$$/fd/* >&2");
   open(STDOUT,">",$tf);
   local(@_)=@_;
-  eex(\@_);
   for(@_) {
+    eex($_);
     $_=eval $_ if m{^\$};
+    eex($_);
   };
-  eex(\@_);
   system(@_);
   if($?) {
     $tf->remove;

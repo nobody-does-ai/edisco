@@ -12,8 +12,14 @@ our(@ISA)=qw(TsvRect);
 our($DEBUG)=0;
 sub new {
   local(@_)=@_;
+  die "usage: Tsv::new ( class, hash )" unless @_==2 and ref($_[1])eq'HASH';
   my($class)=class(shift);
-  my($self)=(ref($_[$#_]) eq 'HASH')?pop:{};
+  my($self)=shift;
   bless($self,$class);
+};
+sub word {
+  my($self)=shift;
+  $self->load() unless defined $self->{word};
+  $self->{word};
 };
 1;

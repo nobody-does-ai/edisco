@@ -1,0 +1,262 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+BEGIN {
+  use FindBin qw( $Bin );
+  use lib "$Bin/../lib";
+}
+use common::sense;
+use Nobody::PP;
+use Nobody::Util;
+use Nobody::JSON;
+BEGIN {
+  my($name)=qw(Nobody/JSON.pm);
+  say $INC{$name};
+};
+use autodie;
+use strict;
+use utf8;
+use warnings;
+use open qw(:std :encoding(UTF-8));
+our(%vars);
+our(@VERSION) = qw( 0 1 0 );
+my($HOME)=path($ENV{HOME});
+my($cfg)=$HOME->child(".config/simtex/simtex.json");
+unless($cfg->exists) {
+  *vars={
+    court      => [
+      "STATE OF MICHIGAN",
+      "PROBATE COURT",
+      "WASHTENAW COUNTY",
+    ],
+    case_name  => [
+      "In re:",
+      "Ara G. Paul and Shirley W. Paul",
+      "Charitable Remainder Unitrust dated May 12, 2023",
+    ],
+    case_no    => "25-001332-TV",
+    judge      => "Hon. Darlene A. O'Brien",
+    title      => "RESPONDENT'S MOTION TO CLARIFY AND SUPPLEMENT THE RECORD",
+    filer_name => "Rich N. Paul",
+    filer_addr => "*Address*",
+    filer_phone => "603-762-0273",
+    filer_email => qw( trust-clownshow@turing-trust.com  )
+  };
+  $cfg->touchpath->spew(json->encode(\%vars));
+  die (
+    "I made you an empty config file.\n",
+    "  : $cfg\n"
+  );;
+};
+*vars=json->decode($cfg->slurp);
+# ----------------------------
+# CONFIG / TEMPLATE LAYER
+# ----------------------------
+
+
+my $caption_template = <<'CAPTION';
+\begin{center}
+{\bfseries %%court_line_1}%%\\
+{\bfseries %%court_line_2}%%\\
+{\bfseries %%court_line_3}%%\\
+\vspace{1em}
+%%case_name_line_1%%\\
+%%case_name_line_2%%\\
+%%case_name_line_3%%\\
+\vspace{0.5em}
+Case No. %%case_no%%\\
+%%judge%%\\
+\vspace{1em}
+{\bfseries %%title%%}
+\end{center}
+
+CAPTION
+
+# explode multiline vars into line_N variables for the caption
+expand_multiline_vars(\%vars, qw(court case_name));
+
+# ----------------------------
+# LATEX PREAMBLE
+# ----------------------------
+
+print <<'TEX';
+\documentclass[12pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{ragged2e}
+\setlength{\parindent}{0pt}
+\begin{document}
+TEX
+
+print interpolate($caption_template, \%vars);
+
+# ----------------------------
+# DSL PARSER
+# ----------------------------
+
+my $in_enum = 0;
+my $in_quote = 0;
+if(-t 0) {
+  warn "no reading stdin";
+} else {
+while (my $line = <>) {
+    chomp $line;
+
+
+    # blank line
+    if ($line =~ /^\s*$/) {
+        close_quote(\$in_quote);
+        close_enum(\$in_enum);
+        print "\n";
+        next;
+    }
+
+    # section
+    if ($line =~ /^\#\s+(.*)$/) {
+        close_quote(\$in_quote);
+        close_enum(\$in_enum);
+        print "\\section*{" . tex(interpolate_inline($1, \%vars)) . "}\n\n";
+        next;
+    }
+
+    # subsection
+    if ($line =~ /^\#\#\s+(.*)$/) {
+        close_quote(\$in_quote);
+        close_enum(\$in_enum);
+        print "\\subsection*{" . tex(interpolate_inline($1, \%vars)) . "}\n\n";
+        next;
+    }
+
+    # blockquote
+    if ($line =~ /^\>\s?(.*)$/) {
+        close_enum(\$in_enum);
+        if (!$in_quote) {
+            print "\\begin{quote}\n";
+            $in_quote = 1;
+        }
+        print tex(interpolate_inline($1, \%vars)) . "\n";
+        next;
+    }
+
+    # ordered list items: ". " or ") "
+    if ($line =~ /^[\.\)]\s+(.*)$/) {
+        close_quote(\$in_quote);
+        if (!$in_enum) {
+            print "\\begin{enumerate}[leftmargin=*]\n";
+            $in_enum = 1;
+        }
+        print "  \\item " . tex(inline_markup(interpolate_inline($1, \%vars))) . "\n";
+        next;
+    }
+
+    # normal paragraph
+    close_quote(\$in_quote);
+    close_enum(\$in_enum);
+    print tex(inline_markup(interpolate_inline($line, \%vars))) . "\n\n";
+}
+}
+close_quote(\$in_quote);
+close_enum(\$in_enum);
+
+print <<"TEX";
+
+\\vspace{2em}
+Respectfully submitted,
+
+$vars{filer_name}\\\\
+$vars{filer_addr}\\\\
+$vars{filer_phone}\\\\
+$vars{filer_email}
+
+\\end{document}
+TEX
+
+# ----------------------------
+# HELPERS
+# ----------------------------
+
+sub close_enum {
+    my ($ref) = @_;
+    if ($$ref) {
+        print "\\end{enumerate}\n\n";
+        $$ref = 0;
+    }
+}
+
+sub close_quote {
+    my ($ref) = @_;
+    if ($$ref) {
+        print "\\end{quote}\n\n";
+        $$ref = 0;
+    }
+}
+
+sub expand_multiline_vars {
+    my ($vars, @keys) = @_;
+    for my $key (@keys) {
+        my @lines = split /\n/, ($vars->{$key} // '');
+        for my $i (0 .. $#lines) {
+            $vars->{"${key}_line_" . ($i + 1)} = $lines[$i];
+        }
+        # fill a few empties so template refs don't explode
+        for my $i ((scalar(@lines) + 1) .. 6) {
+            $vars->{"${key}_line_$i"} //= '';
+        }
+    }
+}
+
+
+sub interpolate_inline {
+  interoploate(@_);
+}
+
+sub tex {
+  my ($s) = @_;
+  return '' unless defined $s;
+  $s =~ s/\\/\\textbackslash{}/g;
+  $s =~ s/([{}\$&#_%])/\\$1/g;
+  $s =~ s/\^/\\textasciicircum{}/g;
+  $s =~ s/~/\\textasciitilde{}/g;
+  $s =~ s/\x{201C}/``/g;
+  $s =~ s/\x{201D}/''/g;
+  $s =~ s/\x{2018}/`/g;
+  $s =~ s/\x{2019}/'/g;
+  $s =~ s/\x{2013}/--/g;
+  $s =~ s/\x{2014}/---/g;
+  return $s;
+}
+# very small inline markup pass before tex escaping
+sub inline_markup {
+  my ($s) = @_;
+
+  # protect backslash-less latex fragments not supported; keep it simple
+
+  # **bold**
+  $s =~ s/\*\*(.+?)\*\*/\\textbf\{$1\}/g;
+
+  # _italic_
+  $s =~ s/\_(.+?)\_/\\textit\{$1\}/g;
+
+  return $s;
+}
+sub interpolate {
+  local(@_)=@_;
+  local($_)=join("",grep{!ref} @_);
+  local(*vars)=[ grep { die ref unless ref eq'HASH'; %$_ } grep { ref } @_ ];
+  (@_)=(split(m{(%%[a-z\d_-]+%%)}i));
+  for(@_){
+    if(m{^%%(.*)%%$}) {
+      my($val)=$vars{$1};
+      say STDERR ref($val);
+      if(ref($val)eq'ARRAY'){
+        $val=join("\n",@{$val});
+      };
+      $_=$val;
+    };
+  };
+}
