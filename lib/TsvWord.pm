@@ -35,17 +35,11 @@ BEGIN {
 my(@bad);
 sub new {
   local(@_)=@_;
+  die "usage: TsvWord->new(attrs)" unless @_==2;
   my($class)=class(shift);
   my(%data)=map { %$_ } shift;
-  my(%rect);
-  for(qw(left top width height)){
-    $rect{$_}=delete$data{$_};
-  };
-  for(keys %data){
-    delete $data{$_} unless defined $data{$_};
-  };
   my($self)={ %data };
-  $self->{rect}=TsvRect->new( \%rect );
+  $self->{rect}=TsvRect->new( \%data );
   if($self->{level}==5) {
     unless($self->{text} =~ /\S/){
       push(@bad,$self);
@@ -54,6 +48,9 @@ sub new {
   };
   bless($self,$class);
   $self;
+};
+sub keys {
+  return qw( text rect level );
 };
 sub text {
   return shift->{text};

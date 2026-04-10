@@ -7,22 +7,24 @@ use Nobody::Util;
 our(@ISA)=qw(Tsv);
 sub new {
   local(@_)=@_;
-  die "usage: TsvGroup::new( class hash ) (got: ".pp(@_).")" unless @_==2 and ref($_[1]) eq 'HASH';
+  die "usage: TsvGroup::new( class hash ) (got: ".pp(@_).")" unless (
+    $_[0]->isa("TsvGroup") and @_==2 and ref($_[1]) eq 'HASH'
+  );
   my($class)=class(shift);
   my($hash)=shift;
   for($hash->{file}){
-    $_=path($_);
+    $_=path($_) if defined;
   };
   my($self)=$class->SUPER::new($hash);
-  bless($self,$class);
+  if(defined($self->{word})){
+    $self->word(delete $self->{word});
+  };
+  $self;
 };
 sub file {
   my($file)=$_[0]->{file};
   die "no file" unless defined $file;
   $file;
-};
-sub word {
-  return (shift->{word}//=[]);
 };
 sub line {
   my($line)=shift->{line};
@@ -30,6 +32,8 @@ sub line {
   $line;
 };
 sub rect {
-  return shift->{rect};
+  my($rect)=shift->{rect};
+  die "no rect" unless defined $rect;
+  $rect;
 };
 1;

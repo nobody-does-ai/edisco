@@ -62,9 +62,7 @@ sub insert {
     $_[$i]=$obj;
   };
   my($sth)=prepare($sql); 
-  eex($sql);
   for(@_){
-    eex($_);
     $@="";
     $sth->execute(map { $_ eq '' ? undef : $_ } @$_);
     eex($@) if $@;

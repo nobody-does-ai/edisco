@@ -29,91 +29,98 @@ sub group_text {
 # sub tsv_combine { ... }
 # sub vert_sort { ... }
 # sub group_find { ... }
-sub _rect {
-  my($obj)=@_;
-  return $obj->rect if blessed($obj) && $obj->can('rect');
-  return $obj;
-}
-sub _field {
-  my($obj,@names)=@_;
-  for my $name (@names) {
-    if(blessed($obj) && $obj->can($name)) {
-      return $obj->$name();
-    }
-    if(ref($obj) eq 'HASH' && exists $obj->{$name}) {
-      return $obj->{$name};
-    }
-  }
-  return undef;
-}
-sub _geom {
-  my($obj,$axis)=@_;
-  my $rect=_rect($obj);
-  if($axis eq 'page') {
-    my $page=_field($obj, qw(page page_num));
-    return defined($page) ? $page : 0;
-  }
-  if($axis eq 'top') {
-    my $v=_field($rect, qw(top y1 t));
-    return defined($v) ? $v : 0;
-  }
-  if($axis eq 'bottom') {
-    my $v=_field($rect, qw(bottom y2 b));
-    return defined($v) ? $v : _geom($obj,'top');
-  }
-  if($axis eq 'left') {
-    my $v=_field($rect, qw(left x1 l));
-    return defined($v) ? $v : 0;
-  }
-  die "bad axis: $axis";
-}
-sub vert_hash_cmp {
+#    sub _rect {
+#      my($obj)=@_;
+#      return $obj->rect if blessed($obj) && $obj->can('rect');
+#      return $obj;
+#    }
+#    sub _field {
+#      my($obj,@names)=@_;
+#      for my $name (@names) {
+#        if(blessed($obj) && $obj->can($name)) {
+#          return $obj->$name();
+#        }
+#        if(ref($obj) eq 'HASH' && exists $obj->{$name}) {
+#          return $obj->{$name};
+#        }
+#      }
+#      return undef;
+#    }
+#    sub _geom {
+#      my($obj,$axis)=@_;
+#      my $rect=_rect($obj);
+#      if($axis eq 'page') {
+#        my $page=_field($obj, qw(page page_num));
+#        return defined($page) ? $page : 0;
+#      }
+#      if($axis eq 'top') {
+#        my $v=_field($rect, qw(top y1 t));
+#        return defined($v) ? $v : 0;
+#      }
+#      if($axis eq 'bottom') {
+#        my $v=_field($rect, qw(bottom y2 b));
+#        return defined($v) ? $v : _geom($obj,'top');
+#      }
+#      if($axis eq 'left') {
+#        my $v=_field($rect, qw(left x1 l));
+#        return defined($v) ? $v : 0;
+#      }
+#      die "bad axis: $axis";
+#    }
+#    sub vert_hash_cmp {
+#    };
+#    sub vert_cmp {
+#      return vert_hash_cmp();
+#    };
+sub vert_cmp {
   return (
-    _geom($a,'page') <=> _geom($b,'page')
-      or
-    _geom($a,'top') <=> _geom($b,'top')
-      or
-    _geom($a,'left') <=> _geom($b,'left')
+    defined($a) <=> defined($b)
+  ) unless defined($a) and defined($b);
+  return (
+    $a->y1 <=> $b->y1
   );
 };
-sub vert_cmp {
-  return vert_hash_cmp();
-};
 sub vert_sort {
-  return sort { vert_hash_cmp } @_;
+  return sort { vert_cmp } @_;
 };
 sub group_find {
-  local(@_)=@_;
+  local(*_)=@_;
   return unless @_;
   @_ = vert_sort(@_);
   my(@group)=shift;
   return @group if ($group[0]->text//'') eq 'POLLOCK';
-  my($bot)=_geom($group[0],'bottom');
-  while(@_ && _geom($_[0],'top') <= $bot) {
+  my($bot)=$group[0]->y2;
+  while(@_ && $_[0]->y1 < $bot) {
     my($word)=shift;
     push(@group,$word);
-    my($wbot)=_geom($word,'bottom');
-    $bot=$wbot if $bot < $wbot;
+    $bot=max($bot,$word->y2);
   }
-  return sort { _geom($a,'left') <=> _geom($b,'left') } @group;
+  my($min_y1)=min(map { $_->y1 }@group);
+  my($max_y2)=max(map { $_->y2 }@group);
+  for(@group) {
+    $_->{y1}=$min_y1;
+    $_->{y2}=$max_y2;
+  };
+  @group = sort { $a->x1 <=> $b->x1 } @group;
+  return @group;
 };
 sub words_merge {
   local(@_)=@_;
-  my(@chars)=grep{length($_->text//'')}@_;
+  my(@chars)=grep{length}map{$_->text//''}@_;
   return @_ unless @chars;
-  my($char_w)=(sum(map{_rect($_)->dx}@chars)/sum(map{length($_->text)}@chars));
+  my($char_w)=(sum(map{$_->dx}@_)/length("@chars"));
   my(@out)=(shift);
   for my $w (@_){
-    my($gap)=_geom($w,'left')-_rect($out[-1])->x2;
+    my($gap)=$w->x1-$out[-1]->x2;
     if($gap <= $char_w){
       my($a)=$out[-1];
       my($merged)=TsvWord->new({
-        text  => ($a->text//'').' '.($w->text//''),
-        left  => _rect($a)->x1,
-        top   => _geom($a,'top'),
-        width => _rect($w)->x2 - _rect($a)->x1,
-        height=> _rect($a)->dy,
-      });
+          text  => join(" ",$a->text(),$w->text()),
+          left  => $a->x1,
+          top   => $a->y1,
+          width => $w->x2-$a->x1,
+          height=> $a->y2-$a->y1,
+        });
       $out[-1]=$merged;
     } else {
       push(@out,$w);
@@ -121,17 +128,6 @@ sub words_merge {
   };
   return @out;
 };
-#    sub split_lines {
-#      my(@words)=vert_sort(grep{defined $_->text}@_);
-#      my(@rows);
-#      while(@words){
-#        my(@row)=group_find(@words);
-#        push(@rows,\@row);
-#        my(%seen)=map{$_=>1}@row;
-#        @words=grep{!$seen{$_}}@words;
-#      };
-#      return @rows;
-#    };
 sub is_num { ($_[0]//'') =~ m{^-?[\d,]*\.?\d+$} }
 sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
 sub parse_xact {

@@ -1,17 +1,18 @@
 package Nobody::JSON;
-use FindBin qw($RealBin);
-use Carp::Always;
-use lib "$RealBin/../lib", "$RealBin/lib";
-use Nobody::Auto qw( common::sense JSON::XS );
-use common::sense;
-use JSON::XS qw( encode_json decode_json );
-our @ISA = qw(JSON::XS );
-our $VERSION = '0.01';
-sub json;
-use Nobody::JSON;
+use lib "../lib";
 our @EXPORT    = qw( json );
 our @EXPORT_OK = qw( encode_json decode_json );
 our %EXPORT_TAGS = ( all => [ @EXPORT_OK ] );
+BEGIN {
+  *import=\&Exporter::import;
+}
+use Exporter;
+use FindBin qw($RealBin);
+use Nobody::Util;
+use Carp::Always;
+use JSON::XS;
+use common::sense;
+our $VERSION = '0.01';
 
 # Lazy-initialised encoder configured for maximum readability:
 # - ascii: escape non-ASCII so output is safe in any context
@@ -20,13 +21,15 @@ our %EXPORT_TAGS = ( all => [ @EXPORT_OK ] );
 INIT {
   sub new {
     my($class)=class(shift);
-    my($self)=$class->SUPER::new;
-    $self->ascii;
-    $self->encode(1);
-    $self->pretty;
-    $self->allow_nonref;
-    $self->allow_blessed;
-    $self->convert_blessed;
+    my($json)=JSON::XS->new;
+    $json->ascii;
+    $json->encode(1);
+    $json->canonical(1);
+    $json->pretty;
+    $json->allow_nonref;
+    $json->allow_blessed;
+    $json->convert_blessed;
+    my($self)=bless([$json],$class);
     $self;
   }; 
 };
@@ -34,32 +37,25 @@ sub json {
   local(@_)=@_;
   state($json);
   unless(defined($json)){
-    $json=
+    $json=Nobody::JSON->new;
   };
   $json;
 };
 sub load {
   die "you can't do that!" unless safe_can($_[0],"load");
-  die "usage: json->load( *FH | path(x) | '/etc/passwd'" unless @_==1;
+  die "usage: json->load( path(x) )" unless (
+    @_==2 and ref($_[1])
+  );
   local(@_)=@_;
   my($self)=shift;
   my($src)=shift;
-  if(safe_can($src,"readline")){
-    @_=<$src>;
-  } elsif ( safe_can($src,"slurp") ) {
-    @_=$src->slurp;
-  } elsif ( ref($src) ) {
-    die "don't know how to count this blessing";
-  } else {
-    @_=path($src)->slurp;
-  };
-  json_decode("@_");
+  json_decode($src->slurp);
 };
 sub save {
   die "you can't do that!" unless safe_can($_[0],"save");
   my($self)=shift;
+  die "too many args" if @_>1;
   my($src)=shift;
-  die "noo many args" if @_>1;
   local($_)=$self->encode(shift);
   if(safe_can($src,"print")){
     $src->print("@_");
@@ -81,25 +77,14 @@ sub encode {
   local(@_)=@_;
   die "you can't do that!" unless safe_can($_[0],"encode");
   my($self)=shift;
-  eex(\@_);
-  $self->SUPER::encode(@_);
+  $self->[0]->encode(@_);
 };
 sub decode {
-  local($_,@_)=@_;
-  my($self)=shift;
-  eex($self);
   die "you can't do that!" unless safe_can($_[0],"decode");
-  $self->SUPER::decode("@_");
+  local(@_)=@_;
+  my($self)=shift;
+  $self->[0]->decode("@_");
 }
-if(0){
-  unless(caller){
-    say STDERR ( "b4" );
-    use Nobody::Util;
-    my($json)=Nobody::JSON->json();
-    say($json->encode({ []=>[] }));
-    say STDERR ( "ok" );
-  };
-};
 1;
 
 =head1 NAME

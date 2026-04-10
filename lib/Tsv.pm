@@ -8,18 +8,29 @@ use Nobody::Util;
 use Nobody::Util qw(sum);
 use common::sense;
 use TsvWord;
-our(@ISA)=qw(TsvRect);
+our(@ISA)=qw();
 our($DEBUG)=0;
+my(%word);
 sub new {
   local(@_)=@_;
   die "usage: Tsv::new ( class, hash )" unless @_==2 and ref($_[1])eq'HASH';
   my($class)=class(shift);
   my($self)=shift;
   bless($self,$class);
+  if($self->can("load")){
+    $self->load;
+  };
+  $self;
+};
+sub TO_JSON {
+  return { class=>ref($_[0]), map { $_=>$_[0]->$_() } $_[0]->keys };
 };
 sub word {
   my($self)=shift;
-  $self->load() unless defined $self->{word};
-  $self->{word};
+  die "usage: word() or word([words])" if @_>1;
+  if(@_) {
+    $word{$self}=shift;
+  }
+  $word{$self};
 };
 1;

@@ -7,6 +7,7 @@ use Exporter qw(import);
 use Nobody::PP qw(loc);
 use Nobody::Util;
 use Tsv;
+our(@ISA)=qw(Tsv);
 use common::sense;
 our($DEBUG);
 *DEBUG=\$Tsv::DEBUG;
@@ -58,7 +59,6 @@ BEGIN {
     my($s)=$s[0];
     for(@s) {
       $key{$_}=$s for@s;
-      $key{$s}=$s;
     };
   };
   *l=\&x1; *left=\&x1;
@@ -77,14 +77,23 @@ BEGIN {
   *w=\&dx; *width=\&dx;
   *h=\&dy; *height=\&dy;
 };
+our(%rect);
 sub new {
-  local($DEBUG)=2;
   local(@_)=@_;
+  die "usage: TsvRect->new({})" unless @_==2 and (
+    $_[0]->isa("TsvRect") and ref($_[1])eq'HASH'
+  );
   my($class)=class(shift);
-  @_=map { (ref eq 'ARRAY')?(@$_):($_) } @_;
-  @_ = map { (ref eq 'HASH') ? %$_ : $_ } @_;
-  @_ = map { $key{$_} or $_ } @_;
-  my(%tmp)=@_;
+  my(%tmp);
+  {
+    local(*rect)=shift;
+    for my $f(keys %rect) {
+      my($t)=$key{$f};
+      next unless length($t);
+      $tmp{$t}=delete $rect{$f};
+    };
+  };
+
   for( [ qw(dx x1 x2) ], [ qw(dy y1 y2) ] ) {
     my($d,$a,$b)=@$_;
     if(defined($tmp{$d})){
@@ -164,6 +173,9 @@ sub key {
     return $key{$key};
   };
   die "bad key: $key";
+};
+sub keys {
+  return qw(x1 y1 x2 y2);
 };
 unless(caller){
   package main;

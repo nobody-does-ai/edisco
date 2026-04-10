@@ -1,22 +1,27 @@
 package TsvFile;
-use TsvGroup;
+use lib "../lib";
 use common::sense;
+use Nobody::Util;
+sub json;
+use Nobody::JSON qw(json);
+use TsvGroup;
 use List::Util qw(mesh);
 use Path::Tiny;
 our(@ISA)=qw(TsvGroup);
 use vars qw( $d $y $q $p $e );
 use TsvUtil;
 use TsvWord;
-use Nobody::JSON qw( json );
 
 our($file);
 sub new {
   local(@_)=@_;
-  die "usage: TsvGroup::new( class hash ) (got: ".pp(@_).")" unless @_==2 and ref($_[1]) eq 'HASH';
+  unless(@_==2 and $_[1]->isa("Path::Tiny")) {
+    die "usage: TsvGroup::new( class hash ) (got: ".pp(@_).")";
+  };
   my($class)=shift;
-  my($hash)=shift;
+  my($hash)={ file=>shift };
   my $self=$class->SUPER::new($hash);
-  $hash->{file}=path($hash->{file});
+  eex($self) unless ref($self);
   bless($self,$class);
   $self->load;
   $self;
@@ -30,14 +35,8 @@ sub load {
   for(@_){
     $_=TsvWord->new({ mesh(\@c,\@$_) });
   };
-  @_=sort { $a->y1 <=> $b->y1 } grep { defined } @_;
-  for(@_){
-    say json->encode(($_));
-  };
-};
-sub word {
-  my($self)=shift;
-  return ($self->{word});
+  $self->word([ sort { $a->y1 <=> $b->y1 } grep { defined } @_ ]);
+  $self;
 };
 sub rect {
   my($self)=$_[0];

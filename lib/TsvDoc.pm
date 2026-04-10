@@ -12,7 +12,10 @@ sub new {
   my($self)=$class->SUPER::new({ key=>$key, pages=>$pages });
   $self;
 };
+sub page  {
+  my($pages)=$_[0]->{pages};
 
+};
 sub key   { $_[0]->{key} };
 sub pages { $_[0]->{pages} };
 1;
