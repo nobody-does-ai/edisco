@@ -6,17 +6,12 @@ $|++;
 use lib "lib";
 use common::sense;
 use autodie;
-use JSON::PP;
 use Nobody::Util;
+use Nobody::JSON qw(json);
 use TsvDB;
-sub read_json;
-sub write_html;
 sub html;
 sub td;
-sub render_table;
 sub rows_for;
-sub display_val;
-sub keep_row;
 my(@ivest_cols,@xact_cols,@idb_cols,@xdb_cols);
 my($NimCrut)='1603387';
 @ARGV=glob("json/202[0-9]-Q[0-9]*.json") unless @ARGV;
@@ -27,9 +22,8 @@ sub main {
   @_=sort map { path($_)->basename(".json") } @_;
   my(%data);
   our(@xact,@ivest);
-  for my $json_file(map { "json/$_.json" } sort @_){
-    my($period)=map { m{/(.*)[.]} } $json_file;
-    my($data)=read_json($json_file);
+  for my $json_file(map{path($_)}map { "json/$_.json" } sort @_){
+    my($data)=json->load($json_file);
     push(@xact,rows_for($data,'transactions'));
     push(@ivest,rows_for($data,'investments'));
   }
@@ -61,11 +55,6 @@ sub xrekey {
   };
   @_;
 };
-sub read_json {
-  my($json_file)=@_;
-  my($json_text)=path($json_file)->slurp;
-  return JSON::PP->new->decode($json_text);
-}
 
 sub rows_for {
   my($data,$key)=@_;
