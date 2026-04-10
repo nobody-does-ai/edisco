@@ -239,7 +239,6 @@ sub statement_file_for {
 }
 
 sub main {
-  open(STDOUT,">&=1") or die "reopen stdout: $!";
   my(%doc);
   my(@files) = @ARGV ? @ARGV : glob("tsv/*.tsv");
   for my $file(sort @files){
