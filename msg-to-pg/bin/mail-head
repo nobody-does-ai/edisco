@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use common::sense;
+use autodie;
+use Nobody::Util;
+use Nobody::PP;
+use Getopt::WonderBra;
+our(@VERSION) = qw( 0 1 0 );
+# Header installed by /home/nn/bin/mkperl
+our(%opt);
+%opt=(
+  head=>{ map { $_=>1 } qw( date to from subject message-id in-reply-to ) },
+) unless %opt;
+main(@ARGV);
+
+sub find {
+  local(@_)=@_;
+  my(@r);
+  my(@d)=grep { -d $_[$_] } keys @_;
+  my(@f)=grep { !-d $_[$_] } keys @_;
+  @_=@_[@d,@f];
+  while(@_ and -d $_[0]){
+    local($_)=path(shift);
+    if(-d) {
+      my(@tmp)=$_->children();
+      unshift(@_,grep { -d } @tmp);
+      push(@_,grep { !-d } @tmp);
+    } else {
+      push(@_,$_);
+    };
+  };
+  @_;
+};
+sub main {
+  our(%head);
+  local(*head)=$opt{head};
+  my($head) = map { qr($_)i } join("","^(",join("|",keys %head),")\$");
+  my ($sub) =sub {
+    local($_)="$_";
+    return 0 unless s{:.*}{};
+    grep { m{$head} } $_;
+  };
+  push(@_,"mail") unless @_;
+  @_=find(@_); 
+  for(@_){
+    my($file)=path($_);
+    my(@lines)=(undef,$file->lines);
+    chomp(@lines);
+    my($m)=0;
+    for(my $i=1;$i<@lines;$i++){
+      local($_)=$lines[$i];
+      last if m{^$};
+      next unless $sub->();
+      ++$m;
+      say "$file:$i: $_";
+    };
+    say "" if $m;
+  };
+}
+
+sub help{};
+sub version{};
+INIT {
+  local(*_)=\@ARGV;
+  @_=getopt("h:",@ARGV);
+  my(%hand)=(
+    h=>{
+      sub=>sub {
+        push(@{$opt{head}},shift);
+        @_;
+      }
+    }
+  );
+
+  while(($_=shift)ne'--'){
+    die "internal error" unless s{^-}{};
+    my($hand)=$hand{$_};
+    die "no option: $_" unless defined $hand;
+    @_=$hand->{sub}->(@_);
+  };
+};
