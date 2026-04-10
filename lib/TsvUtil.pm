@@ -12,13 +12,15 @@ BEGIN {
   tsv_parse tsv_partition
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
-  tsv_to_tsv
+  tsv_to_tsv rows_find group_text
   paths trace ref_cnt
   vert_hash_cmp vert_cmp vert_sort group_find words_merge
   is_num clean_num parse_xact parse_ivst
   );
 };
 sub group_text {
+  die "usage: group_text([words])" unless @_==1 and ref($_[0])eq'ARRAY';
+  @_=map { @$_ } shift;
   return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
 };
 # Salvaged from the older ../lib/TsvUtil.pm line. It depends on helpers and
@@ -88,21 +90,37 @@ sub group_find {
   return unless @_;
   @_ = vert_sort(@_);
   my(@group)=shift;
-  return @group if ($group[0]->text//'') eq 'POLLOCK';
-  my($bot)=$group[0]->y2;
-  while(@_ && $_[0]->y1 < $bot) {
-    my($word)=shift;
-    push(@group,$word);
-    $bot=max($bot,$word->y2);
-  }
-  my($min_y1)=min(map { $_->y1 }@group);
-  my($max_y2)=max(map { $_->y2 }@group);
-  for(@group) {
-    $_->{y1}=$min_y1;
-    $_->{y2}=$max_y2;
+  if (($group[0]->text//'') ne 'POLLOCK') {
+    my($bot)=$group[0]->y2;
+    while(@_ && $_[0]->y1 < $bot) {
+      my($word)=shift;
+      push(@group,$word);
+      $bot=max($bot,$word->y2);
+    }
+    my($min_y1)=min(map { $_->y1 }@group);
+    my($max_y2)=max(map { $_->y2 }@group);
+    for(@group) {
+      $_->{y1}=$min_y1;
+      $_->{y2}=$max_y2;
+    };
   };
   @group = sort { $a->x1 <=> $b->x1 } @group;
-  return @group;
+  return \@group;
+};
+sub rows_find {
+  local(@_)=@_;
+  my(@words)=vert_sort(grep{defined $_->text}@_);
+  my(@rows);
+  while(@words){
+    @_=grep { defined } group_find(\@words);
+    next unless @_;
+    my($tot_dx)=sum(map{$_->dx}@_);
+    my($tot_ch)=sub{ map{length($_->text)} @_; };
+    my($ch_wid)=$tot_dx/$tot_ch;
+    eex($ch_wid);
+    push(@rows,@_);
+  };
+  \@rows;
 };
 sub words_merge {
   local(@_)=@_;
@@ -112,7 +130,7 @@ sub words_merge {
   my(@out)=(shift);
   for my $w (@_){
     my($gap)=$w->x1-$out[-1]->x2;
-    if($gap <= $char_w){
+    if($gap <= 2*$char_w){
       my($a)=$out[-1];
       my($merged)=TsvWord->new({
           text  => join(" ",$a->text(),$w->text()),
@@ -258,10 +276,18 @@ sub pdf_to_png {
     return $of;
   };
   $of->parent->mkdir;
-  err("xform $if to $of (convert -density 300 )");
-  system(qw(convert -density 300 ), $if, $of);
-  die "convert failed: $?" if $?;
-  return path($of);
+#      err("xform $if to $of (convert -density 300 )");
+#      system(qw(convert -density 300 ), $if, $of);
+  if(fork) {
+    waitpid(0,0);
+    die "convert failed: $?" if $?;
+    return path($of);
+  } else {
+    open(STDIN,"<",$if); 
+    open(STDOUT,">",$of);
+    exec("bin/pdf-to-png");
+    die "exec:bin/pdf-to-png:$!";
+  }
 };
 sub png_to_tsv {
   die "usage: png_to_tsv(\$png)" unless @_;

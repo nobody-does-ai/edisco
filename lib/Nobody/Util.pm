@@ -193,6 +193,7 @@ sub class($) {
 sub safe_isa {
   my ($self)  = shift;
   my ($class) = shift;
+  return 1 if eval { $self->isa($class) };
   return undef unless ref($self);
   return undef unless blessed($self);
   return $self->isa($class);

@@ -21,6 +21,17 @@ sub new {
   };
   $self;
 };
+{
+  my %word;
+  sub word {
+    my($self)=shift;
+    die "usage: word() or word([words])" if @_>1;
+    if(@_) {
+      $word{$self}=shift;
+    }
+    $word{$self};
+  };
+};
 sub file {
   my($file)=$_[0]->{file};
   die "no file" unless defined $file;

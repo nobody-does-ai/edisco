@@ -25,12 +25,4 @@ sub new {
 sub TO_JSON {
   return { class=>ref($_[0]), map { $_=>$_[0]->$_() } $_[0]->keys };
 };
-sub word {
-  my($self)=shift;
-  die "usage: word() or word([words])" if @_>1;
-  if(@_) {
-    $word{$self}=shift;
-  }
-  $word{$self};
-};
 1;

@@ -1,0 +1,390 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use autodie;
+use Nobody::Util;
+use JSON::PP;
+use TsvUtil;
+use TsvUtil qw(group_find vert_sort words_merge rows_find group_text);
+use TsvFile;
+use TsvDoc;
+use TsvDB;
+our(@VERSION) = qw( 0 1 0 );
+my(@sec_cols,@inv_cols,@xdb_cols);
+
+sub is_num { ($_[0]//'') =~ m{^-?(?:[\d,]+(?:\.\d+)?|\.\d+)$} }
+sub clean_num { my $n=shift//return undef; $n=~s/,//g; $n }
+sub norm_space { my $s=shift//return ''; $s=~s/\s+/ /g; $s=~s/^\s+|\s+$//g; $s }
+sub fmt_money { sprintf('%.2f', $_[0]) }
+sub title_key {
+  my($s)=@_;
+  return undef unless defined $s;
+  $s=norm_space($s);
+  if($s =~ /\(([A-Z][A-Z0-9]{1,9})\)/){
+    return "AH_$1";
+  };
+  my($base)=$s;
+  $base=~s/\([^)]*\)//g;
+  my(@tok)=grep{length}($base =~ /([A-Za-z0-9]+)/g);
+  my($acro)=join('', map { uc substr($_,0,1) } @tok);
+  return undef unless length $acro;
+  return "AH_$acro";
+}
+sub xact_kind {
+  my($desc)=@_;
+  return 'income_dividend' if $desc =~ /\bCash Dividend\b/i;
+  return 'income_capgain_long' if $desc =~ /\bLong Term Capital Gain Distribution\b/i;
+  return 'income_capgain_short' if $desc =~ /\bShort Term Capital Gain Distribution\b/i;
+  return 'income_interest' if $desc =~ /\bDaily Rate Income\b/i;
+  return 'fee' if $desc =~ /\bFee\b/i;
+  return 'transfer_out' if $desc =~ /\b(?:Cash Transfer|Cash Disbursement)\b.*\bWithdrawal\b/i;
+  return 'trade_buy' if $desc =~ /^Purchase\b/i;
+  return 'trade_sell' if $desc =~ /^Sale\b/i;
+  return 'transfer_in' if $desc =~ /\bDeposit\b/i;
+  return 'other';
+}
+sub xact_counterparty {
+  my($desc)=@_;
+  return $1 if $desc =~ /\b(?:To|account)\s+([A-Z]*\d{5,10}[A-Z]*)\b/i;
+  return undef;
+}
+sub parse_trade_security {
+  my($desc)=@_;
+  return unless $desc =~ /^(Purchase|Sale)\s+([\d,]+(?:\.\d+)?|\.\d+)\s+Units\s+of\s+(.+?)\s+\@\s+\$?([\d,]+(?:\.\d+)?|\.\d+)$/i;
+  return (
+    units  => clean_num($2),
+    name   => norm_space($3),
+    uprice => clean_num($4),
+  );
+}
+sub parse_dividend_security {
+  my($desc)=@_;
+  return unless $desc =~ /\bCash Dividend\s+([\d,]+(?:\.\d+)?)\s+USD\s+(.+?)\s+For\s+([\d,]+(?:\.\d+)?)\s+(Units|Shares)\b/i;
+  return (
+    rate       => clean_num($1),
+    name       => norm_space($2),
+    units      => clean_num($3),
+    units_kind => lc($4),
+  );
+}
+sub parse_capgain_security {
+  my($desc)=@_;
+  return unless $desc =~ /\b(?:Long|Short)\s+Term Capital Gain Distribution\s+([\d,]+(?:\.\d+)?)\s+USD\s+(.+?)\s+For\s+([\d,]+(?:\.\d+)?)\s+(Units|Shares)\b/i;
+  return (
+    rate       => clean_num($1),
+    name       => norm_space($2),
+    units      => clean_num($3),
+    units_kind => lc($4),
+  );
+}
+sub parse_income_security {
+  my($desc)=@_;
+  return unless $desc =~ /\bDaily Rate Income on\s+(.+?)\s+For Period of\b/i;
+  return (
+    name => norm_space($1),
+  );
+}
+sub signed_amount {
+  my($desc,$amount)=@_;
+  return undef unless defined $amount;
+  $amount=clean_num($amount);
+  return undef unless defined $amount && length $amount;
+  my($abs)=$amount; $abs=~s/^-//;
+  return "-$abs" if $desc =~ /(?:^Purchase\b|Fee\b|Withdrawal\b)/i;
+  return $abs   if $desc =~ /(?:^Sale\b|Dividend\b|Income\b|Deposit\b)/i;
+  return $amount;
+}
+sub infer_dividend_amount {
+  my($desc,$amount)=@_;
+  return $amount unless defined $amount && $amount =~ /^\d+$/;
+  return $amount unless $desc =~ /\b(?:Cash Dividend|(?:Long|Short)\s+Term Capital Gain Distribution)\s+(\d+(?:\.\d+)?)\s+USD\b/i;
+  my($rate)=$1;
+  return $amount unless $desc =~ /\bFor\s+([\d,]+(?:\.\d+)?)\s+(?:Units|Shares)\b/i;
+  my($qty)=clean_num($1);
+  my($want)=sprintf('%.2f',$rate * $qty);
+  my($got)=$amount + 0;
+  return $want if $got >= 100 && abs(($got/100) - $want) < 0.02;
+  return $want if $got >= 1000 && abs(($got/1000) - $want) < 0.02;
+  return $amount;
+}
+sub infer_trade_amount {
+  my($desc,%t)=@_;
+  return undef unless defined $t{units} && defined $t{uprice};
+  my($amt)=fmt_money(($t{units}+0) * ($t{uprice}+0));
+  return "-$amt" if $desc =~ /^Purchase\b/i;
+  return $amt if $desc =~ /^Sale\b/i;
+  return undef;
+}
+sub is_xact_continuation {
+  my($text)=@_;
+  return 0 unless defined $text && length $text;
+  return 0 if is_header_noise($text) || is_account($text);
+  return 1 if $text =~ /^(?:Ex Date\b|Date\b|account:|AUA Platform Fee:)/i;
+  return 1 if $text =~ m{^\d{1,2}/\d{2}/\d{2}\b};
+  return 1 if $text =~ m{1.00 For [\d.]+ Units};
+  return 1 if $text =~ m{With Ex Date};
+  return 0;
+}
+sub reparse_xact {
+  my($x)=@_;
+  return unless $x;
+  my($desc)=$x->{descr};
+  if(my(%t)=parse_trade_security($desc)){
+    @{$x}{keys %t}=values %t;
+    $x->{total}=infer_trade_amount($desc,%t);
+  } elsif(my(%d)=parse_dividend_security($desc)){
+    @{$x}{keys %d}=values %d;
+    $x->{total}=infer_dividend_amount($desc,$x->{total});
+  } elsif(my(%g)=parse_capgain_security($desc)){
+    @{$x}{keys %g}=values %g;
+    $x->{total}=infer_dividend_amount($desc,$x->{total});
+  } elsif(my(%i)=parse_income_security($desc)){
+    @{$x}{keys %i}=values %i;
+  };
+  $x->{kind}=xact_kind($desc);
+  $x->{cparty}=xact_counterparty($desc);
+  $x->{sec}=title_key($x->{name}) if defined $x->{name};
+  return $x;
+}
+sub is_header_noise {
+  my($text)=@_;
+  return 1 if $text =~ m{^(?:Date\b|Number\b|Page\b|A CONSOL|COVERING|HOW MY)}i;
+  return 1 if $text =~ /^(?:Date Description Amount|Total value\b|Total For\b)/i;
+  return 1 if $text =~ /\bcontinue[dn]?\b/i;
+  return 0;
+}
+sub is_cat {
+  my($text)=@_;
+  return 0 unless defined $text && $text =~ /\w/;
+  return 0 if $text =~ /\d/;
+  return 0 if is_header_noise($text);
+  return 0 if $text =~ /\b(?:Trust|Ara|Shirley|Paul|U\/A|DTD|Account)\b/i;
+  return 1;
+}
+
+sub parse_xact {
+  while(1) {
+    local(@_)=@_;
+    my($text)=join(' ', map{$_->text//''}@_);
+    my(@tok)=split(/\s+/,$text);
+    last unless @tok >= 2;
+    my($date)=$tok[0];
+    last unless $date =~ m{^\d{1,2}/\d{2}/\d{4}$};
+    my($amount)=$tok[-1];
+    my($desc);
+    if (@tok >= 3 && $tok[-2] =~ /ACCOUNT/i && $amount =~ /^\d{6,7}$/) {
+      $desc = norm_space(join(' ',@tok[1..$#tok]));
+      $amount = undef;
+    } else {
+      unless(is_num($amount)) {
+        last;
+      };
+      $desc = norm_space(join(' ',@tok[1..$#tok-1]));
+    }
+    my(%x)=(
+      date  => $date,
+      descr => $desc,
+      reported_amount => clean_num($amount),
+      total => clean_num($amount),
+    );
+    $x{total}=infer_dividend_amount($desc,$x{total});
+    $x{total}=signed_amount($desc,$x{total});
+    return reparse_xact(\%x);
+  };
+  eex("parse xact", \@_);
+  return;
+};
+
+sub parse_ivst {
+  my(@w)=@_;
+  my(@nums);
+  while(@w && is_num($w[-1]->text)){
+    unshift @nums, clean_num((pop @w)->text);
+  };
+  return unless @nums >= 3;
+  my($desc)=join(' ', map{$_->text//''}@w);
+  return unless $desc =~ /\w/;
+  return if $desc =~ /^Total\b/i;
+  my($num,$sprice,$total,$basis,$unreal);
+  if    (@nums==5){ ($num,$sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==4){ ($sprice,$total,$basis,$unreal)=@nums }
+  elsif (@nums==3){
+    # Some fixed-income rows only expose par amount, price, and market value.
+    if(($nums[1]+0) > 0 && ($nums[1]+0) < 200 && ($nums[2]+0) > ($nums[1]+0) * 10){
+      ($num,$sprice,$total)=@nums;
+    } else {
+      ($total,$basis,$unreal)=@nums;
+    };
+  };
+  my(%h)=(
+    name => norm_space($desc),
+  );
+  $h{nshares} = $num    if defined $num;
+  $h{sharep}  = $sprice if defined $sprice;
+  $h{value}   = $total  if defined $total;
+  $h{basis}   = $basis  if defined $basis;
+  $h{unreal}  = $unreal if defined $unreal;
+  $h{sec}     = title_key($h{name});
+  return \%h;
+};
+
+sub is_account {
+  my($text)=@_;
+  my(@tok)=split(/\s+/,$text);
+  return 0 unless @tok >= 2;
+  return 0 unless $tok[0] =~ /^\d{5,10}$/;
+  return !is_num($tok[-1]);
+};
+sub statement_file_for {
+  my($key)=@_;
+  for my $dir(qw(src pdf)){
+    for my $ext(qw(pdf)){
+      my($file)="$dir/$key.$ext";
+      return $file if -f $file;
+    };
+  };
+  return undef;
+}
+
+sub main {
+  my(%doc);
+  my(@files) = @ARGV ? @ARGV : glob("tsv/*.tsv");
+  my(@xact,@ivst,@crap);
+  $DB::single=1;
+  TsvDB->execute("truncate table inv");
+  TsvDB->execute("truncate table sec");
+  TsvDB->execute("truncate table xact");
+  @crap=qw(crap);
+  for my $file(sort @files){
+    next unless -s $file;
+    my($p)=path($file);
+    my($key,$page)=($file=~m{(\d\d\d\d-Q\d)-(\d\d\d)});
+    next unless defined $key;
+    my($tsv)=TsvFile->new($p);
+    my(%sect);
+    $sect{TRANSACTIONS}=\@xact;
+    $sect{INVESTMENTS}=\@ivst;
+    $sect{INSURED}=\@crap;
+    $sect{Page}=\@crap;
+    my($sect)=\@crap;
+    my(@rows)=@{rows_find(@{$tsv->word})};
+    for my $r(@rows) {
+      for my $w($r->[0]) {
+        if($w->level == 5) {
+          $w->{key}=$key;
+          $w->{page}=$page;
+          for ($w->text) {
+            if($sect{$_}) {
+              push(@{$sect},$_);
+              $sect=[];
+              push(@{$sect{$_}},$_,$sect);
+            };
+          };
+        };
+        push(@{$sect},$r);
+      };
+    };
+    $doc{$key}->[$page]=$tsv;
+  };
+  path("crapl.log")->spew(ppx({crap=>\@crap}));
+  path("words.log")->spew(ppx({xact=>\@xact, ivst=>\@ivst}));
+};
+#    sub next() {
+#      my(%securities,%categories);
+#      my(@xact,@ivest);
+#      for my $key(sort keys %doc){
+#        my $d=TsvDoc->new($key,$doc{$key});
+#        my($file)=statement_file_for($key);
+#        my(@xacts,@ivsts);
+#        my($section,$account)=('','');
+#        for my $page(@{$d->pages}){
+#          my(@rows);
+#          {
+#            my(@words)=vert_sort(grep{defined $_->text}@{$page->word});
+#            while(@words){
+#              my(@row)=group_find(\@words);
+#              push(@rows,\@row);
+#            };
+#          };
+#          for my $row(@rows){
+#            my(@w)=words_merge(@$row);
+#            my($text)=join(' ',map{$_->text}@w);
+#            if ($text=~/^(TRANSACTIONS|Date\s+Description\s+Amount)/){
+#              $section='xact'; next
+#            } elsif($text=~/^(INVESTMENTS|Number)/){
+#              $section='ivst'; next
+#            } elsif($text=~/^(INSURED DEPOSIT CASH)/) {
+#              $section=undef;
+#            } elsif($text=~/^(Page \d+ of \d+)/) {
+#              $section=undef;
+#            };
+#            next unless $section;
+#            if($section eq 'xact'){
+#              if(@xacts && is_xact_continuation($text)){
+#                $xacts[-1]{descr}=norm_space("$xacts[-1]{descr} $text");
+#                reparse_xact($xacts[-1]);
+#                next;
+#              };
+#              next if is_header_noise($text);
+#              if(is_account($text)){
+#                $account=(split(/\s+/,$text))[0];
+#                next
+#              };
+#              my($x)=parse_xact(@w);
+#              if($x){
+#                $x->{qtr}          = $key;
+#                $x->{file} = $file if defined $file;
+#                $x->{acct}         = $account;
+#                push @xacts,$x;
+#              };
+#            } elsif($section eq 'ivst'){
+#              next if is_header_noise($text);
+#              if(is_account($text)){ $account=(split(/\s+/,$text))[0]; next };
+#              my($i)=parse_ivst(@w);
+#              if($i){
+#                $i->{qtr}          = $key;
+#                $i->{file} = $file if defined $file;
+#                $i->{acct}         = $account;
+#                push @ivsts,$i;
+#              } elsif(@ivsts && !defined $ivsts[-1]{cat} && is_cat($text) && length($text)<40){
+#                $ivsts[-1]{cat}=norm_space($text);
+#              };
+#            };
+#          };
+#        };
+#        for my $r(@xacts,@ivsts){
+#          my($sk)=delete $r->{key};
+#          my($sn)=delete $r->{name};
+#          $r->{sec}=$sk;
+#          $securities{$sk}=$sn;
+#          my($cat)=$r->{cat};
+#          $categories{$cat}=1 if defined $cat;
+#        };
+#        push @xact, @xacts;
+#        push @ivest, @ivsts;
+#      };
+#      my @secs = map { { key => $_, name => $securities{$_} } } sort keys %securities;
+#      eex \%securities;
+#      TsvDB->copy_bulk("sec",  [@sec_cols], [@secs]);
+#      TsvDB->copy_bulk("inv",  [@inv_cols], [@ivest]);
+#      TsvDB->copy_bulk("xact", [@xdb_cols], [@xact]);
+main;
+
+INIT {
+  @sec_cols = qw(key name);
+  @inv_cols = qw(
+    qtr   acct  cat
+    key   nshares sharep
+    value basis  unreal
+  );
+  @xdb_cols = qw(
+    qtr   acct  date
+    kind  cparty name
+    units uprice rate
+    total descr
+  );
+};

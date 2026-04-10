@@ -1,11 +1,20 @@
 #!/usr/bin/perl
 # vim: ts=2 sw=2 ft=perl
+use lib "../lib";
 eval 'exec perl -x -wS $0 ${1+"$@"}'
 if 0;
 $|++;
-use lib "../lib";
+use Nobody::JSON qw(json);
+sub json;
+BEGIN { *json=\&Nobody::JSON::json };
+use common::sense;
+BEGIN {
+  use Nobody::JSON;
+  for ( grep { /json/i } keys %INC ) {
+    say $_, $INC{$_};
+  };
+};
 use Nobody::Util;
-
 use common::sense;
 use autodie;
 use TsvUtil;
@@ -22,6 +31,7 @@ sub between {
   return 0 if(min($min,$max)>max($y1,$y2));
   return 1;
 };
+
 sub rows {
   local(@_)=@_;
   our(@row);
@@ -39,6 +49,7 @@ sub rows {
 };
 my($tsv);
 sub main {
+  json->pretty();
   @_=sort(glob("tsv/*.tsv"));
   for(@_){
     eex(TsvFile->new({file=>path($_)}));
