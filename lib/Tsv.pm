@@ -17,12 +17,9 @@ sub new {
   my($class)=class(shift);
   my($self)=shift;
   bless($self,$class);
-  if($self->can("load")){
-    $self->load;
-  };
   $self;
 };
 sub TO_JSON {
-  return { class=>ref($_[0]), map { $_=>$_[0]->$_() } $_[0]->keys };
+  return { class=>ref($_[0]), map { $_=>$_[0]->$_() } sort $_[0]->keys };
 };
 1;

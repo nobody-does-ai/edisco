@@ -8,6 +8,7 @@ use lib "lib";
 use common::sense;
 use Nobody::Util;
 use TsvRect;
+use Hash::Util;
 use autodie;
 use Nobody::PP;
 our(@VERSION) = qw( 0 1 0 );
@@ -37,9 +38,12 @@ sub new {
   local(@_)=@_;
   die "usage: TsvWord->new(attrs)" unless @_==2;
   my($class)=class(shift);
-  my(%data)=map { %$_ } shift;
-  my($self)={ %data };
-  $self->{rect}=TsvRect->new( \%data );
+  my($data)={ map{%$_}shift };
+  for(grep { m{_num$} } %$data){
+    delete $data->{$_};
+  };
+  $data->{rect}=TsvRect->new( $data );
+  my($self)=$data;
   if($self->{level}==5) {
     unless($self->{text} =~ /\S/){
       push(@bad,$self);

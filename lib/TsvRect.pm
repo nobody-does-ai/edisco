@@ -17,15 +17,32 @@ BEGIN {
   @head=qw( top left width height );
   $_=1 for @head{+@head};
 };
-sub dx {
-  my($self)=shift;
-  die "usage: rect->dx()" if(@_);
-  return $self->{x2}-$self->{x1};
-};
 sub dy {
   my($self)=shift;
   die "usage: rect->dy()" if(@_);
   return $self->{y2}-$self->{y1};
+};
+sub y1 {
+  my($self)=shift;
+  die unless $self->isa("TsvRect");
+  $self->{y1}=shift if @_;
+  return $self->{y1};
+};
+sub y2 {
+  my($self)=shift;
+  die unless $self->isa("TsvRect");
+  $self->{y2}=shift if @_;
+  return $self->{y2};
+};
+sub cy {
+  my($self)=shift;
+  die unless $self->isa("TsvRect");
+  return int(($self->{y1}+$self->{y2})/2);
+};
+sub dx {
+  my($self)=shift;
+  die "usage: rect->dx()" if(@_);
+  return $self->{x2}-$self->{x1};
 };
 sub x1 {
   my($self)=shift;
@@ -39,17 +56,10 @@ sub x2 {
   $self->{x2}=shift if @_;
   return $self->{x2};
 };
-sub y1 {
+sub cx {
   my($self)=shift;
   die unless $self->isa("TsvRect");
-  $self->{y1}=shift if @_;
-  return $self->{y1};
-};
-sub y2 {
-  my($self)=shift;
-  die unless $self->isa("TsvRect");
-  $self->{y2}=shift if @_;
-  return $self->{y2};
+  return int(($self->{x1}+$self->{x2})/2);
 };
 
 BEGIN {
@@ -131,7 +141,7 @@ sub union {
     });
 };
 sub clone {
-  return class($_[0])->new(%{$_[0]});
+  return class($_[0])->new({%{$_[0]}});
 };
 sub rect {
   return shift;

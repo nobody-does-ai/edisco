@@ -2,7 +2,7 @@
 
 of=output
 {
-  gs -dNOPAUSE -dBATCH -sDEVICE=png256 -r300 -sOutputFile=$of.new - 
+  gs -dNOPAUSE -dBATCH -sDEVICE=png256 -r400 -sOutputFile=$of.new - 
 } > /dev/null
 mv $of.new $of
 cat $of

@@ -12,16 +12,16 @@ BEGIN {
   tsv_parse tsv_partition
   pdf_to_png pdf_to_pgs
   png_to_tsv pdf_page_count
-  tsv_to_tsv rows_find group_text
-  paths trace ref_cnt
+  tsv_to_one rows_find group_text
+  paths ref_cnt
   vert_hash_cmp vert_cmp vert_sort group_find words_merge
   is_num clean_num parse_xact parse_ivst
   );
 };
 sub group_text {
-  die "usage: group_text([words])" unless @_==1 and ref($_[0])eq'ARRAY';
+  die "usage: group_text([words]) got: ".pp(\@_) unless @_==1 and ref($_[0])eq'ARRAY';
   @_=map { @$_ } shift;
-  return join(" ", map { $_->text } sort { $a->left <=> $b->left } @_);
+  return join(" ", map { $_->text } @_);
 };
 # Salvaged from the older ../lib/TsvUtil.pm line. It depends on helpers and
 # column metadata that do not exist in this local branch yet, so keep it out of
@@ -92,41 +92,32 @@ sub group_find {
   my(@group)=shift;
   if (($group[0]->text//'') ne 'POLLOCK') {
     my($bot)=$group[0]->y2;
-    while(@_ && $_[0]->y1 < $bot) {
+    while(@_ && $_[0]->rect->cy < $bot) {
       my($word)=shift;
       push(@group,$word);
       $bot=max($bot,$word->y2);
     }
-    my($min_y1)=min(map { $_->y1 }@group);
-    my($max_y2)=max(map { $_->y2 }@group);
-    for(@group) {
-      $_->{y1}=$min_y1;
-      $_->{y2}=$max_y2;
-    };
+    @group = sort { $a->x1 <=> $b->x1 } @group;
   };
-  @group = sort { $a->x1 <=> $b->x1 } @group;
   return \@group;
 };
 sub rows_find {
   local(@_)=@_;
-  my(@words)=vert_sort(grep{defined $_->text}@_);
   my(@rows);
-  while(@words){
-    @_=grep { defined } group_find(\@words);
-    next unless @_;
-    my($tot_dx)=sum(map{$_->dx}@_);
-    my($tot_ch)=sub{ map{length($_->text)} @_; };
-    my($ch_wid)=$tot_dx/$tot_ch;
-    eex($ch_wid);
-    push(@rows,@_);
+  my(@words)=map { @$_ } splice @_;
+  while(@words) {
+    my($row)= group_find(\@words);
+    for $row ( [ words_merge($row) ] ) {
+      push(@rows,$row);
+    };
   };
   \@rows;
 };
 sub words_merge {
-  local(@_)=@_;
-  my(@chars)=grep{length}map{$_->text//''}@_;
-  return @_ unless @chars;
+  local(*_)=@_;
+  my(@chars)=grep{length}map{$_->text}@_;
   my($char_w)=(sum(map{$_->dx}@_)/length("@chars"));
+  @_=sort { $a->x1 <=> $b->x1 } @_;
   my(@out)=(shift);
   for my $w (@_){
     my($gap)=$w->x1-$out[-1]->x2;
@@ -134,14 +125,23 @@ sub words_merge {
       my($a)=$out[-1];
       my($merged)=TsvWord->new({
           text  => join(" ",$a->text(),$w->text()),
-          left  => $a->x1,
-          top   => $a->y1,
-          width => $w->x2-$a->x1,
-          height=> $a->y2-$a->y1,
+          level => 5,
+          x1    => $a->x1,
+          y1    => min($a->y1,$w->y1),
+          x2    => $w->x2,
+          y2    => max($a->y2,$w->y2),
         });
       $out[-1]=$merged;
     } else {
-      push(@out,$w);
+      my($merged)=TsvWord->new({
+          text  => $w->text,
+          level => 5,
+          x1    => $w->x1,
+          y1    => $w->y1,
+          x2    => $w->x2,
+          y2    => $w->y2,
+        });
+      push(@out,$merged);
     };
   };
   return @out;
@@ -181,9 +181,15 @@ sub parse_ivst {
   $h{unreal}=$unreal if defined $unreal;
   return \%h;
 };
-sub tsv_to_tsv {
-  trace(@_);
-  my($out,@list)=@_;
+sub tsv_to_one {
+  local(@_)=@_;
+  my(@tsv)=@_;
+  my(%out);
+  for my $tsv(@tsv){
+    local($_)="$tsv";
+    s{-[0-9][0-9][0-9]}{};
+    push(@{$out{$_}},$tsv);
+  };
 };
 use Exporter qw(import);
 sub err {
@@ -200,7 +206,7 @@ sub paths {
   @_;
 };
 sub ddx { goto \&eex };
-my(%verbose)={ skip=>0, trace=>1 };
+my(%verbose)={ skip=>0 };
 sub gather {
   local(@_)=@_;
   my(%res);
@@ -211,23 +217,6 @@ sub gather {
   };
   return %res if wantarray;
   return \%res;
-};
-sub trace {
-  my(@caller)=caller(0);
-  @caller[3]=[caller(1)]->[3];
-  my($pkg)=__PACKAGE__;
-  for(@caller[3]){
-    s{^${pkg}::}{};
-  };
-  my($msg);
-  if($verbose{trace}==2){
-    ($msg)=join(":",@caller[1,2,3],"@_");
-  } elsif($verbose{trace}==1) {
-    ($msg)=join(":",@caller[3],"@_");
-  } else {
-    ($msg)=$caller[3];
-  };
-  say STDERR $msg;
 };
 sub tsv_parse {
   local(@_)=@_;
@@ -240,18 +229,7 @@ sub tsv_parse {
   say STDERR pp(scalar(@word),"words");
   \@word;
 };
-sub ref_cnt {
-  local(@_)=@_;
-  die pp([@_]) if grep {!ref} @_;
-  local(@_)=@_;
-  my(%ref);
-  for(@_){
-    $ref{ref($_)}++;
-  };
-  \%ref;
-};
 sub pdf_page_count {
-  trace(@_);
   my ($pdf) = @_;
   my @cmd = ('pdfinfo', $pdf);
   my $info = qx/@cmd 2>&1/;
@@ -261,13 +239,11 @@ sub pdf_page_count {
   return $pages_line;
 }
 sub get_page_count {
-  trace(@_);
   goto &pdf_page_count;
 }
 sub pdf_to_png {
   die "usage: pdf_to_png(\$png)" unless @_;
   return map { pdf_to_png($_) } @_ unless @_==1;
-  trace(@_);
   my($if)=path($_[0]);
   die "$if does not exist" unless -e $if;
   my($of)=path(sprintf("png/%s.png",$if->basename(".pdf")));
@@ -292,7 +268,6 @@ sub pdf_to_png {
 sub png_to_tsv {
   die "usage: png_to_tsv(\$png)" unless @_;
   return map { png_to_tsv($_) } @_ unless @_==1;
-  trace(@_);
   my($fmt)="tsv/%s.tsv";
   my($base,$dir);
   my $if=shift;

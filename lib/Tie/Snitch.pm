@@ -1,44 +1,63 @@
 package Tie::Snitch;
 use common::sense;
+use Tie::Array;
+use Data::Dump ();
+BEGIN {
+  STDOUT->autoflush(1);
+};
 our($AUTOLOAD);
+my(%other)=qw( pp 1 ppx 1 dd 1 ddx 1 );
 sub AUTOLOAD {
   my($pkg,$sub)=map { m{(.*)::(.*)} } $AUTOLOAD;
-  my($self,$ref);$self=\$ref;
-  STDERR->print($ref,"\n");
+  say STDERR "$pkg :: $sub";
+  my($data);
   if(0){
+  } elsif ($sub eq 'pp') {
+    return Data::Dump::pp(@_);
+  } elsif ($sub eq 'dd') {
+    return Data::Dump::dd(@_);
+  } elsif ($sub eq 'ddx') {
+    return Data::Dump::ddx(@_);
   } elsif ( $sub eq 'TIESCALAR' ) {
     require Tie::StdScalar;
-    my($ts);
-    $ref=tie $ts, 'Tie::StdScalar';
-    return bless($self);
+    my($scalar);
+    tie $scalar, 'Tie::StdScalar';
+    $data={imp=>tied $scalar};
+    return bless($data,__PACKAGE__);
   } elsif($sub eq 'TIEARRAY') {
     require Tie::StdArray;
-    my(@ta);
-    $ref=tie @ta, 'Tie::StdArray';
-    return bless($self);
+    my(@array);
+    tie @array, 'Tie::StdArray';
+    $data={imp=>tied @array};
+    return bless($data,__PACKAGE__);
   } elsif ( $sub eq 'TIEHASH' ) {
     require Tie::StdHash;
-    my(%th);
-    $ref=tie %th, 'Tie::StdHash';
-    return bless($self);
+    my(%hash);
+    tie %hash, 'Tie::Snitch';
+    $data={imp=>tied %hash};
+    return bless($data,__PACKAGE__);
   } else {
-    $DB::single=1;
-    return ${$self}->$sub(@_);
+    $data=shift;
+    Nobody::PP::eex($sub,@_);
+    return $data->{imp}->$sub(@_);
   };
   die "no return above( $pkg $sub @_ )";
 };
+
 unless(caller) {
   package main;
+  say join(":",__FILE__,__LINE__,"msg2");
   our($s,@a,%h);
-  tie $s,'Tie::Snitch',\$s;
-  tie @a,'Tie::Snitch',\@a;
-  tie %h,'Tie::Snitch',\%h;
+#      tie $s,'Tie::Snitch';
+  tie @a,'Tie::Snitch';
+  tie %h,'Tie::Snitch';
   $s="scalar";
   push(@a,'array','array');
-  $#a=19999;
   $h{key1}='value1';
   $h{key2}='value2'; 
-  $,=" ";
+  STDERR->say( \$s, \@a, \%h );
+  STDERR->say( map { $_, $a[$_] } keys @a );
+  STDERR->say( map { $_, $h{$_} } keys %h );
 };
 1;
 

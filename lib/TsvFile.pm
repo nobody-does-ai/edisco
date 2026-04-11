@@ -30,11 +30,24 @@ sub load {
   local(@_)=@_;
   my($self)=shift;
   local(@_)=$self->{file}->lines;
-  @_=map { [ split ] } @_;
-  my(@c)=map { @$_ } shift;
+  my(@w);
+  my(@c);
   for(@_){
-    $_=TsvWord->new({ mesh(\@c,\@$_) });
+    $_=[split];
+    if(@c) {
+      $_={mesh(\@c,$_)};
+      $_=TsvWord->new($_);
+      next unless defined;
+      if($_->level==1) {
+        $self->{rect}=$_->rect;
+      } elsif ($_->level==5) {
+        push(@w,$_);
+      };
+    } else {
+      @c=@$_;
+    };
   };
+  @_=@w;
   $self->word([ sort { $a->y1 <=> $b->y1 } grep { defined } @_ ]);
   $self;
 };

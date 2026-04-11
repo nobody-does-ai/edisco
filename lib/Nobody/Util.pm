@@ -71,7 +71,7 @@ BEGIN {
     open_fds    pad         pasteLines  safe_blessed
     safe_can    safe_isa    serdate     serial_maker
     setfl       sum         uniq        uri
-    vcmp        vsort exports
+    vcmp        vsort exports refcount ref_cnt
     path pp ppx dd ddx ee eex
     ));
 }
@@ -190,6 +190,19 @@ sub class($) {
   return ref || $_ || 'undef' for shift;
 }
 
+sub refcount {
+  ret_cnt(@_);
+};
+sub ref_cnt {
+  local(@_)=@_;
+  die pp([@_]) if grep {!ref} @_;
+  local(@_)=@_;
+  my(%ref);
+  for(@_){
+    $ref{ref($_)}++;
+  };
+  \%ref;
+};
 sub safe_isa {
   my ($self)  = shift;
   my ($class) = shift;

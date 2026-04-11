@@ -1,0 +1,1 @@
+lib/TsvWord.pm:43:  $data->{rekt}=$data->{rect}->clone;

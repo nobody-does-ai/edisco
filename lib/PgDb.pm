@@ -76,6 +76,8 @@ sub copy_bulk {
   my($tab) = shift;
   my($cols) = shift;
   my($rows) = shift;
+  return unless @$rows;
+#      eex( { tab=>$tab, cols=>$cols, rows=>$rows } );
   my(@head) = @{$cols};
   my($head) = join(", ",@head);
   my($body) = join(", ", map { "?" } @head);
@@ -100,6 +102,7 @@ sub copy_bulk {
     };
   };
   $sth->execute();
+#      eex(@rows);
   dbh->pg_putcopydata(join("\n",@rows,""));
   dbh->pg_endcopy();
 }
