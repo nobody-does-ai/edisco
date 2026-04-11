@@ -10,11 +10,7 @@ BEGIN {
 use common::sense;
 use Nobody::PP;
 use Nobody::Util;
-use Nobody::JSON;
-BEGIN {
-  my($name)=qw(Nobody/JSON.pm);
-  say $INC{$name};
-};
+use Nobody::JSON qw(json);
 use autodie;
 use strict;
 use utf8;
@@ -25,32 +21,10 @@ our(@VERSION) = qw( 0 1 0 );
 my($HOME)=path($ENV{HOME});
 my($cfg)=$HOME->child(".config/simtex/simtex.json");
 unless($cfg->exists) {
-  *vars={
-    court      => [
-      "STATE OF MICHIGAN",
-      "PROBATE COURT",
-      "WASHTENAW COUNTY",
-    ],
-    case_name  => [
-      "In re:",
-      "Ara G. Paul and Shirley W. Paul",
-      "Charitable Remainder Unitrust dated May 12, 2023",
-    ],
-    case_no    => "25-001332-TV",
-    judge      => "Hon. Darlene A. O'Brien",
-    title      => "RESPONDENT'S MOTION TO CLARIFY AND SUPPLEMENT THE RECORD",
-    filer_name => "Rich N. Paul",
-    filer_addr => "*Address*",
-    filer_phone => "603-762-0273",
-    filer_email => qw( trust-clownshow@turing-trust.com  )
-  };
   $cfg->touchpath->spew(json->encode(\%vars));
-  die (
-    "I made you an empty config file.\n",
-    "  : $cfg\n"
-  );;
 };
 *vars=json->decode($cfg->slurp);
+eex(\%vars);
 # ----------------------------
 # CONFIG / TEMPLATE LAYER
 # ----------------------------
