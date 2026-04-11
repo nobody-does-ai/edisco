@@ -13,7 +13,7 @@ use TsvUtil;
 use TsvUtil qw(group_find vert_sort words_merge rows_find group_text);
 use TsvFile;
 use TsvDoc;
-use TsvDB;
+use PgDb;
 our(@VERSION) = qw( 0 1 0 );
 my(@sec_cols,@inv_cols,@xdb_cols);
 
@@ -160,7 +160,7 @@ sub reparse_xact {
   };
   $x->{kind}=xact_kind($desc);
   $x->{cparty}=xact_counterparty($desc);
-  $x->{sec}=title_key($x->{name}) if defined $x->{name};
+  $x->{sym}=title_key($x->{name}) if defined $x->{name};
   return $x;
 }
 sub is_header_noise {
@@ -198,47 +198,52 @@ sub parse_xact {
   $account=shift;
   my($desc_x)=10000000;
   while(@xact){
-    eex($_);
+#        eex($_);
     my($row)=shift(@xact);
     local($_)=$row->[0]->text;
     my($w)=split;
-    eex($desc_x, $row->[0]->x1);
-    eex(group_text($row));
+#        eex($desc_x, $row->[0]->x1);
+#        eex(group_text($row));
     if(m{TRANSACTIONS}){
-      eex("TRANSACTIONS: ",scalar(@xact));
+#          eex("TRANSACTIONS: ",scalar(@xact));
     } elsif(@xacts && $row->[0]->x1 >= $desc_x){
-      eex($xacts[-1]);  
+#          eex($xacts[-1]);  
       $xacts[-1]{descr}=norm_space("$xacts[-1]{descr} $_");
       $xacts[-1]=reparse_xact($xacts[-1]);
-      eex($xacts[-1]);  
+#          eex($xacts[-1]);  
     }elsif(is_account($_)){
-      eex({account=>$account});
+#          eex({account=>$account});
       $account=(split(/\s+/,$_))[0];
-      eex({account=>$account});
+#          eex({account=>$account});
     }elsif(is_header_noise($_)){
-      die("noise: $_\n".pp($row));
+#          eex("noise: $_");
+      next;
     }elsif(m{^\d{1,2}/\d{2}/\d{4}$}){
-      eex($desc_x);
+#          eex($desc_x);
       $desc_x=min($desc_x,$row->[1]->x1);
-      eex($desc_x);
+#          eex($desc_x);
       my(%x)=(
         date  => $_,
         descr => $row->[1]->text,
         reported_amount => clean_num($row->[2]),
         total => clean_num($row->[2]),
+        qtr   => $row->[0]->{key},
+        acct  => $account,
       );
-      eex(\%x);
+#          eex(\%x);
       my($desc)=$row->[1]->text;
       $x{total}=infer_dividend_amount($desc,$x{total});
       $x{total}=signed_amount($desc,$x{total});
       my($x)=reparse_xact(\%x);
-#          eex($x);
+#    #          eex($x);
       push(@xacts,$x);
     } else {
-      die("none of them: ".pp($row));
+#          eex("skip: $_");
+      next;
     };
   };
-  TsvDB->copy_bulk("xact", [@xdb_cols], [@xacts]);
+  PgDb->copy_bulk("xact", [@xdb_cols], [@xacts]);
+  say STDERR "xact:\t".scalar(@xacts);
 };
 
 
@@ -270,9 +275,9 @@ sub parse;
 sub main {
   my(%doc);
   my(@files) = glob("tsv/*.tsv");
-  TsvDB->execute("truncate table inv");
-  TsvDB->execute("truncate table sec");
-  TsvDB->execute("truncate table xact");
+  PgDb->execute("truncate table inv");
+  PgDb->execute("truncate table sec");
+  PgDb->execute("truncate table xact");
   @files=sort(@files);
   my(%file);
   for my $file(@files){
@@ -294,9 +299,10 @@ sub main {
       my(@word)=(@{$tsv->word});
       my(@row)=@{rows_find(\@word)};
       for my $row(@row){
+        $row->[0]->{key}=$key;
+        $row->[0]->{page}=$page;
         my($text)=map { split } $row->[0]->text;
         $sect=$sect{$text}//$sect;
-        eex($text, $sect->{name});
         push(@{$sect->{rows}},$row);
       };
     }
@@ -349,67 +355,68 @@ sub main {
 #      push @xact, @xacts;
 #      push @ivst, @ivsts;
 #      my @secs = map { { key => $_, name => $securities{$_} } } sort keys %securities;
-#      TsvDB->copy_bulk("sec",  [@sec_cols], [@secs]);
-#      TsvDB->copy_bulk("inv",  [@inv_cols], [@ivst]);
-#      TsvDB->copy_bulk("xact", [@xdb_cols], [@xact]);
+#      PgDb->copy_bulk("sec",  [@sec_cols], [@secs]);
+#      PgDb->copy_bulk("inv",  [@inv_cols], [@ivst]);
+#      PgDb->copy_bulk("xact", [@xdb_cols], [@xact]);
 #    }
 main;
-
+my(%acct,%cat);
 INIT {
-  @sec_cols = qw(key name);
+  %acct;
+  @sec_cols = qw(sym name);
   @inv_cols = qw(
     qtr   acct  cat
-    key   nshares sharep
+    sym   nshares sharep
     value basis  unreal
   );
   @xdb_cols = qw(
     qtr   acct  date
-    kind  cparty name
+    kind  cparty sym
     units uprice rate
     total descr
   );
+  $DB::single=1;
+  %cat = map { $_->[0], {cat=>$_->[0],descr=>$_->[1]}, } map { @$_ } PgDb->fetchall_arrayref("select cat, descr from cat");
+  for(keys %cat) {
+    $cat{$cat{$_}{descr}}=$cat{$_};
+  };
+  eex(\%cat);
 };
 sub parse_ivst {
   my($account);
-  my(%cat)=(
-    "International Fixed Income"=>1,
-    "Domestic Fixed Income"=>1,
-    "Domestic Equity"=>1,
-    "Cash & Equivalents"=>1,
-    "Alternative"=>1,
-  );
   local(*_)=\@ivst;
   while(@_){
     local($_)=shift;
     die "undef ".pp(@_) unless defined;
     my($text)=group_text($_);
     local(@_)=@{$_};
+    my($qtr)=$_[0]->{key};
     local($_)=map { split } $_[0]->text;
-    eex($_,$text);
+#        eex($_,$text);
     if($text =~ m{^(Total value|Number of|Share price|shares)}i){
-      eex($_);
+#          eex($_);
     }elsif($text eq "Date Description Amount"){
-      eex($_);
+#          eex($_);
     }elsif(m{INVESTMENTS}) {
-      eex($_);
+#          eex($_);
     } elsif(m{^(\d+)$}){
-      eex("ACCOUNT: $1");
+#          eex("ACCOUNT: $1");
       $account=$1;
+      $acct{$1}=$text;
       next;
     } elsif( $text=~m{^Total (for $account)}i) {
       $account=undef;
     } elsif( $cat{$_} or $cat{$text} ) {
-      eex("CATEGORY");
+      $ivsts[-1]{cat} = $cat{$text}{cat} if @ivsts;
     } else {
-      eex("INVESTMENT");
+#          eex("INVESTMENT");
       my(@nums);
-      eex(group_text(\@_)); 
+#          eex(group_text(\@_)); 
       while(@_ && is_num($_[-1]->text)){
         unshift @nums, clean_num((pop @_)->text);
       };
       die "I DIE!", pp({account=>$account, ivst=>$ivst[0]}) unless @nums;
       my($desc)=join(' ', map{$_->text//''}@_);
-      eex($desc);
       next unless $desc =~ /\w/;
       next if $desc =~ /^Total\b/i;
       my($num,$sprice,$total,$basis,$unreal);
@@ -425,15 +432,30 @@ sub parse_ivst {
       };
       my(%h)=(
         name => norm_space($desc),
+        qtr  => $qtr,
+        acct => $account,
+        cat  => undef,
       );
-      eex(\%h);
       $h{nshares} = $num    if defined $num;
       $h{sharep}  = $sprice if defined $sprice;
       $h{value}   = $total  if defined $total;
       $h{basis}   = $basis  if defined $basis;
       $h{unreal}  = $unreal if defined $unreal;
-      $h{sec}     = title_key($h{name});
+      $h{sym}     = title_key($h{name});
       push(@ivsts,\%h);
     };
   };
+  my(%securities);
+  for my $r(@ivsts){
+    $securities{$r->{sym}}=$r->{name} if defined $r->{sym};
+  };
+  my(@secs)=map { {sym=>$_, name=>$securities{$_}} } sort keys %securities;
+  PgDb->copy_bulk("sec",  [@sec_cols], [@secs]);
+  PgDb->copy_bulk("inv",  [@inv_cols], [@ivsts]);
+  for my $k (keys %acct) {
+    my($a,$n) = ($k, $acct{$k});
+    $a =~ s/'/''/g; $n =~ s/'/''/g;
+    PgDb->execute("INSERT INTO acct (acct, name) VALUES ('$a','$n') ON CONFLICT DO NOTHING");
+  };
+  say STDERR join("\t", "inv:", 0+@ivsts, "sec:", 0+@secs);
 };

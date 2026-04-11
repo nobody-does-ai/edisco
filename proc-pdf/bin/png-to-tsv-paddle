@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+# vim: ts=2 sw=2 ft=python
+# Convert a PNG to Tesseract-compatible TSV using PaddleOCR.
+# Usage: png-to-tsv-paddle <image.png>
+# Output: TSV on stdout (same columns as tesseract tsv output)
+
+import os, sys
+os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+os.environ['PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT']   = 'False'
+
+import logging
+logging.disable(logging.WARNING)
+
+from paddleocr import PaddleOCR
+from PIL import Image
+
+def main(path):
+  img = Image.open(path)
+  W, H = img.size
+
+  ocr = PaddleOCR(
+    use_doc_orientation_classify = False,
+    use_doc_unwarping            = False,
+    use_textline_orientation     = False,
+    lang                         = 'en',
+    text_detection_model_name    = 'PP-OCRv5_mobile_det',
+  )
+
+  results = ocr.predict(path)
+
+  cols = ['level','page_num','block_num','par_num','line_num','word_num',
+          'left','top','width','height','conf','text']
+  print('\t'.join(cols))
+
+  # level 1 — page
+  row(1, 0,0,0,0, 0,0,W,H, -1, '')
+
+  for line_num, line_text in enumerate(results[0]['rec_texts'], 1):
+    line_box  = results[0]['rec_boxes'][line_num-1].tolist()
+    line_score = results[0]['rec_scores'][line_num-1]
+
+    lx1,ly1,lx2,ly2 = line_box
+    lw, lh = lx2-lx1, ly2-ly1
+    conf = round(line_score * 100, 6)
+
+    # levels 2-4 share the line bounding box
+    row(2, line_num,0,0,0, lx1,ly1,lw,lh, -1, '')
+    row(3, line_num,1,0,0, lx1,ly1,lw,lh, -1, '')
+    row(4, line_num,1,1,0, lx1,ly1,lw,lh, -1, '')
+
+    # split line text on whitespace and distribute x positions proportionally
+    words = line_text.split()
+    if not words:
+      continue
+    n_chars = len(line_text)  # includes spaces
+    char_w  = lw / max(n_chars, 1)
+
+    x = lx1
+    for word_num, word in enumerate(words, 1):
+      ww = max(1, round(len(word) * char_w))
+      row(5, line_num,1,1,word_num, round(x),ly1,ww,lh, conf, word)
+      x += ww + char_w  # advance past word + one space
+
+def row(level, block,par,line,word, left,top,w,h, conf, text):
+  conf_s = str(conf) if conf >= 0 else '-1'
+  print('\t'.join(str(x) for x in [
+    level, 1, block, par, line, word,
+    left, top, w, h, conf_s, text
+  ]))
+
+if __name__ == '__main__':
+  if len(sys.argv) != 2:
+    print(f"usage: {sys.argv[0]} <image.png>", file=sys.stderr)
+    sys.exit(1)
+  main(sys.argv[1])

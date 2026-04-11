@@ -1,0 +1,59 @@
+#!/usr/bin/perl
+# vim: ts=2 sw=2 ft=perl
+# Generate a SQL function that returns a table's current contents as a record set.
+# Usage: table2view <table> [table ...]
+# Output: SQL on stdout
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+$|++;
+use lib "lib";
+use common::sense;
+use autodie;
+use Nobody::Util;
+use TsvDB;
+
+sub quote_val {
+  my($v) = @_;
+  return 'NULL' unless defined $v;
+  $v =~ s/'/''/g;
+  return "'$v'";
+};
+
+sub table2view {
+  my($table) = @_;
+  my $dbh = TsvDB->dbh;
+
+  my @cols = @{ $dbh->selectall_arrayref(qq{
+    SELECT attname, pg_catalog.format_type(atttypid, atttypmod)
+    FROM pg_attribute
+    WHERE attrelid = '$table'::regclass AND attnum > 0 AND NOT attisdropped
+    ORDER BY attnum
+  }) };
+
+  my @rows = @{ $dbh->selectall_arrayref("SELECT * FROM $table") };
+
+  my $args  = join(", ", map { "$_->[0] $_->[1]" } @cols);
+  my $fname = "${table}_data";
+
+  say "CREATE OR REPLACE FUNCTION $fname()";
+  say "RETURNS TABLE ($args) AS \$\$";
+
+  if (@rows) {
+    my $first = 1;
+    for my $row (@rows) {
+      my $kw = $first ? "  SELECT" : "  UNION ALL SELECT";
+      $first = 0;
+      my @vals = map { quote_val($row->[$_]) . "::" . $cols[$_][1] } keys @cols;
+      say "$kw " . join(", ", @vals);
+    };
+  } else {
+    say "  SELECT " . join(", ", map { "NULL::$_->[1] AS $_->[0]" } @cols) . " WHERE false";
+  };
+
+  say "\$\$ LANGUAGE sql IMMUTABLE;";
+  say "";
+  say "CREATE OR REPLACE VIEW $table AS SELECT * FROM $fname();";
+  say "";
+};
+
+table2view($_) for @ARGV;
