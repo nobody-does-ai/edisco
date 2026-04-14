@@ -10,13 +10,16 @@
 #
 # Configuration -- edit %opt to change behaviour:
 
+use lib "lib";
 use common::sense;
 use Nobody::Util;
+use Maildir;
+use MultiHash;
 use XML::LibXML::Simple qw(XMLin);
 use POSIX qw(strftime);
 use MIME::Base64 qw(decode_base64);
 use Digest::MD5 qw(md5_hex);
-use JSON::XS qw( encode_json decode_json );
+use Nobody::JSON qw(json);
 
 my %filt; 
 for( qw( 
@@ -92,7 +95,7 @@ my %opt = (
   maildir => "mail",
   domain  => 'sms.org',
   me      => '6034000820,6037573283,6037620273',
-  areas   => '734,603',
+  areas   => '734',
 );
 
 my @me_numbers  = split /,/, $opt{me};
@@ -102,8 +105,7 @@ my %is_me       = map { $_ => 1 } @me_numbers;
 # ------------------------------------------------------------------ helpers --
 my(%norm);
 END {
-  my($norm)=encode_json(\%norm);
-  path("norm.json")->spew($norm);
+  json->save("norm.json",\%norm);
 };
 sub normalize {
   # Collapse any phone number to bare 10 digits.
@@ -258,12 +260,9 @@ sub write_message {
   # Include m_type in filename to avoid collisions between delivery-receipt
   # shells (m_type=128) and the actual message record (m_type=132) that can
   # share the same millisecond timestamp.
-  my $fn  = join('.', $ms, $type, $mtype, $opt{domain});
-  my $tmp = $maildir->child('tmp')->mkdir->child($fn);
-  my $new = $maildir->child('new')->mkdir->child($fn);
-  $maildir->child('cur')->mkdir;
-  $tmp->spew_utf8($raw);
-  $tmp->move($new);
+  my $fn = join('.', $ms, $type, $mtype, $opt{domain});
+  utf8::encode(my $bytes = $raw);
+  write_maildir_message($maildir, $fn, $bytes);
 }
 
 # ----------------------------------------------------------------- SMS loop --
@@ -483,7 +482,6 @@ sub main {
       $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
     };
   };
-  eex(\%msg);
   exit(0);
   my($total_sms)=0;
   my($total_mms)=0;

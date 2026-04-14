@@ -4,19 +4,20 @@ use warnings;
 use common::sense;
 use lib "lib";
 use Nobody::Util;
+use Maildir;
 BEGIN {
   local(@_) = "$Dir";
   s{dir/*$}{} for @_;
 };
-use JSONUtil;
+use Nobody::JSON;
 use Mail::IMAPClient;
 use IO::Socket::SSL;
 use Digest::MD5 qw(md5_hex);
-use JSON::PP ();
 #gmail/rich.paul.freeman gmail/rich.private.paul
 push(@ARGV, qw(
   gmail/rich.freeman.paul 
   gmail/rich.paul.freeman
+  gmail/rich.private.paul
   )
 ) unless @ARGV;
 sub main(@);
@@ -28,7 +29,9 @@ sub main(@) {
   my $dir = path($config->{maildir});
   $dir->child($_)->mkdir for qw(cur new tmp);
   my($idx_file)=$dir->child("index.json");
-  my $idx = load_json($idx_file);
+  my $idx = json->load($idx_file);
+  $idx={} unless ref($idx);
+  eex($idx);
   $idx->{version} //= 1;
   $idx->{folder}  //= $config->{target_label};
   $idx->{uidvalidity} //= undef;
@@ -41,7 +44,7 @@ sub main(@) {
 
 
   clean_maildir_cur($idx, $dir->child('cur'));
-  save_json($idx_file, $idx);
+  json->save($idx_file, $idx);
 
   {
     my $folder = $config->{target_label};
@@ -49,7 +52,7 @@ sub main(@) {
     log_msg("Selecting folder: $folder");
     $imap->select($folder) or die "Could not select $folder: $@";
 
-    my $uv = eval { $imap->uidvalidity() };
+    my $uv = eval { $imap->uidvalidity($folder) };
     $idx->{uidvalidity} = $uv if defined $uv;
 
     log_msg(@{$config->{targets}} ? "Starting individual term searches..." : "No targets configured; searching ALL messages...");
@@ -105,7 +108,7 @@ sub main(@) {
       }
 
       unless ($cur_target->exists || $new_target->exists) {
-        $new_target->spew_raw($raw);
+        write_maildir_message($dir, $base, $raw);
       }
 
       $idx->{messages}{$mid} = {
@@ -117,15 +120,15 @@ sub main(@) {
         subject => $h->{subject},
       };
       $idx->{uids}{$uid} = $mid;
-      save_json($idx_file, $idx);
+      json->save($idx_file, $idx);
       $added++;
       log_msg("Downloaded $added new unique messages (staged in new/).");
       last if $added > 250;
     }
 
-    save_json($idx_file, $idx);
+    json->save($idx_file, $idx);
 
-    clean_maildir_cur($dir->child('cur'));
+    clean_maildir_cur($idx,$dir->child('cur'));
 
     my $new_dir = $dir->child('new');
     my @staged = sort grep { -f $_ && $_->basename !~ /^\./ } $new_dir->children;
@@ -154,8 +157,8 @@ sub main(@) {
       $promoted++;
     }
 
-    clean_maildir_cur($dir->child('cur'));
-    save_json($idx_file, $idx);
+    clean_maildir_cur($idx,$dir->child('cur'));
+    json->save($idx_file, $idx);
 
     log_msg("Sync complete. $added new unique messages downloaded; $promoted promoted into cur/.");
   }
@@ -176,7 +179,7 @@ sub load_account_config {
   my $raw = qx(pass show -- $entry);
   die "Failed to read pass entry $entry\n" if $? != 0;
 
-  my $cfg = eval { JSON::PP::decode_json($raw) };
+  my $cfg = eval { json->decode($raw) };
   die "Invalid JSON in pass entry $entry: $@\n" if $@;
   die "Config in pass entry $entry must be a JSON object\n" unless ref($cfg) eq 'HASH';
 
@@ -241,7 +244,7 @@ sub imap {
 
 sub log_msg {
   my (@loc) = caller(0);
-  say $loc[1], ":", $loc[2], ": ", sprintf("[%s] %s\n", serdate, "@_");
+  say $loc[1], ":", $loc[2], ": ", sprintf("[%s] %s", serdate, "@_");
 }
 
 sub parse_headers_from_raw {
