@@ -9,7 +9,7 @@ use JSON::PP;
 my $contacts = load_contacts('contacts.json');
 
 # Look up a contact by phone number
-my $phone = '+17343551065';
+my $phone = 'XXXXXXXXXXXX';
 if (exists $contacts->{$phone}) {
     print "Phone $phone belongs to: $contacts->{$phone}\n";
 } else {
@@ -17,7 +17,7 @@ if (exists $contacts->{$phone}) {
 }
 
 # Find all contacts with a specific name
-my $search_name = 'Paul';
+my $search_name = 'XXXX';
 print "\nContacts matching '$search_name':\n";
 foreach my $addr (sort keys %$contacts) {
     if ($contacts->{$addr} =~ /$search_name/i) {
