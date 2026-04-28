@@ -23,9 +23,10 @@ use Nobody::JSON qw(json);
 
 my %filt; 
 for( qw( 
-7343551065 7346461004 7346656622 6038651077
-7343551065 6038031699 7342726715 7342726715 7343551065 7346461004
-7342726715 7346461004
+7342726715
+7343551065
+7346461004
+7346656622
 )) {
 $filt{$_}++;
 };
@@ -52,44 +53,6 @@ sub parts {
     };
   };
   return @_;
-};
-{
-  package Msg;
-  use Nobody::Util;
-  sub new {
-    local(@_)=@_;
-    my($class)=class(shift);
-    our(%data);
-    local(*data)=shift;
-    my($self)={};
-    $self->{date}=main::date(\%data);
-    $self->{fr}=main::fr_addr(\%data);
-    $self->{to}=main::to_addr(\%data);
-    return undef unless $filt{$self->{fr}} or $filt{$self->{to}};
-    my(%attach);
-    tie %attach,'MultiHash';
-    $self->{attach}=\%attach;
-    %{$self->{attach}}=%{main::parts(\%data)};
-    $self->{body}=main::body(\%data);
-    eex($self);
-    bless($self,$class);
-    $self;
-  };
-  sub to {
-    return $_[0]->{to};
-  };
-  sub fr {
-    return $_[0]->{fr};
-  };
-  sub body {
-    return $_[0]->{body};
-  };
-  sub date {
-    return $_[0]->{date};
-  };
-  sub attach {
-    return $_[0]->{attach};
-  };
 };
 my %opt = (
   maildir => "mail",
@@ -180,89 +143,16 @@ sub phone_addr {
 
 sub me_addr { qq{"me" <} . $me_numbers[0] . qq{\@$opt{domain}>} }
 
-# Map MMS content-types to file extensions.
-my %CT_EXT = (
-  'image/jpeg'      => 'jpg',
-  'image/jpg'       => 'jpg',
-  'image/png'       => 'png',
-  'image/gif'       => 'gif',
-  'image/webp'      => 'webp',
-  'image/bmp'       => 'bmp',
-  'image/tiff'      => 'tif',
-  'video/mp4'       => 'mp4',
-  'video/3gpp'      => '3gp',
-  'video/3gpp2'     => '3g2',
-  'video/quicktime' => 'mov',
-  'video/webm'      => 'webm',
-  'audio/mpeg'      => 'mp3',
-  'audio/mp4'       => 'm4a',
-  'audio/amr'       => 'amr',
-  'audio/ogg'       => 'ogg',
-  'audio/wav'       => 'wav',
-  'application/pdf' => 'pdf',
-  'text/vcard'      => 'vcf',
-  'text/x-vcard'    => 'vcf',
-);
-
-sub ct_ext {
-  my ($ct) = @_;
-  $ct = lc($ct // '');
-  $ct =~ s/;.*//;   # strip parameters like "; charset=utf-8"
-  $ct =~ s/\s+//g;
-  return $CT_EXT{$ct} // 'bin';
-}
-
-# Save a binary attachment to inc/<md5>.<ext>; hard-link if already present.
-# Returns the bare filename, or undef if data is absent/null.
-sub save_attachment {
-  my ($incdir, $ct, $b64) = @_;
-  return undef unless defined $b64 && $b64 ne '' && $b64 ne 'null';
-  my $bytes = decode_base64($b64);
-  return undef unless length($bytes);
-  my $md5  = md5_hex($bytes);
-  my $ext  = ct_ext($ct);
-  my $fn   = "$md5.$ext";
-  my $dest = $incdir->child($fn);
-  unless (-e $dest) {
-    # Write to a temp file first, then rename atomically.
-    my $tmp = $incdir->child("$fn.tmp");
-    $tmp->spew_raw($bytes);
-    $tmp->move($dest);
-  }
-  return $fn;
-}
-
 sub rfc2822 {
   my ($ms) = @_;
   return strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime(int(($ms||0)/1000)));
 }
 
-sub emit_email {
-  my (%m) = @_;
-  my $body = $m{body} // '';
-  $body =~ s/\r\n/\n/g;
-  $body =~ s/\r/\n/g;
-  $body =~ s/\n+$//;
-  $body .= "\n";
-  my @h;
-  push @h, "From: $m{from}"       if defined $m{from};
-  push @h, "To: $m{to}"           if defined $m{to};
-  push @h, "CC: $m{cc}"           if defined $m{cc};
-  push @h, "Date: $m{date}";
-  push @h, "Message-Id: $m{mid}";
-  push @h, "Subject: $m{subject}" if defined $m{subject};
-  push @h, @{ $m{xhdrs} }         if $m{xhdrs};
-  return join("\n", @h, "", $body);
-}
 
 sub write_message {
-  my ($maildir, $ms, $type, $mtype, $raw) = @_;
-  # Include m_type in filename to avoid collisions between delivery-receipt
-  # shells (m_type=128) and the actual message record (m_type=132) that can
-  # share the same millisecond timestamp.
-  my $fn = join('.', $ms, $type, $mtype, $opt{domain});
+  my ($maildir, $raw) = @_;
   utf8::encode(my $bytes = $raw);
-  write_maildir_message($maildir, $fn, $bytes);
+  write_maildir_message($maildir, $bytes);
 }
 
 # ----------------------------------------------------------------- SMS loop --
@@ -308,7 +198,7 @@ sub handle_sms {
       ],
     );
 
-    write_message($maildir, $date_ms, 'sms', 0, $raw);
+    write_message($maildir, $raw);
     $written++;
   }
   return $written;
@@ -379,7 +269,7 @@ sub handle_mms {
           # other text subtypes: treat as body if non-empty
           $body .= ($body eq '' ? '' : "\n\n") . $text if $text ne '';
         } elsif ($data ne '') {
-          my $fn = save_attachment($incdir, $ct, $data);
+          my $fn = save_attachment($incdir, $ct, decode_base64($data));
           push @att_files, $fn if defined $fn;
         }
       }
@@ -427,13 +317,12 @@ sub handle_mms {
     );
 
     my $mtype = $mms->{m_type} // 0;
-    write_message($maildir, $date_ms, 'mms', $mtype, $raw);
+    write_message($maildir, $raw);
     $written++;
   }
   return $written;
 }
 
-our %msg;
 my($stime);
 BEGIN {
   $stime=time;
@@ -444,20 +333,17 @@ sub date {
   die unless defined $date;
   serdate($date);
 };
-our(@msg);
 sub main {
   my $maildir = path($opt{maildir});
   $maildir->mkdir;
-  my @inputs=(glob('xml/sms-*.xml'));
-  for my $infile (@inputs) {
+  my $total_sms = 0;
+  my $total_mms = 0;
+
+  for my $infile (glob('xml/sms-*.xml')) {
     my $abs = path($infile)->realpath;
     warn "Parsing $abs ...\n";
-    use XML::LibXML;
-    use XML::LibXML::Simple qw(XMLin);
-
     my $parser = XML::LibXML->new(huge => 1);
     my $doc    = $parser->parse_file($abs);
-    
     my $data = XMLin(
       $doc,
       KeepRoot   => 1,
@@ -465,41 +351,17 @@ sub main {
       ForceArray => [qw( sms mms part addr parts addrs )],
     );
     my $root = $data->{smses} or die "Expected <smses> root in $abs\n";
-    for(@{$root->{sms}},@{$root->{mms}}){
-      my($msg)=Msg->new($_);
-      next unless defined $msg;
-      $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
-    };
-    eex( { msgs=>0+(keys %msg) } );
+    $total_sms += handle_sms($maildir, $root->{sms} // []);
+    $total_mms += handle_mms($maildir, $root->{mms} // []);
   }
-  for my $infile( glob("json/*.json")) {
+
+  for my $infile (glob("json/*.json")) {
     warn "Parsing $infile ...\n";
     my $data = decode_json(path($infile)->slurp);
-    for(@$data){
-      $_->{archived}=join("",$_->{archived});
-      my($msg)=Msg->new($_);
-      next unless defined $msg;
-      $msg{$msg->date}{$msg->fr}{$msg->to}=$msg;
-    };
-  };
-  exit(0);
-  my($total_sms)=0;
-  my($total_mms)=0;
-  our(@msg);
-  for my $date(sort keys %msg) {
-    local(*msg)=$msg{$date};
-    say "date: ", $date;
-    say refaddr(\%msg);
-    for my $fr_addr(sort keys %msg) {
-      local(*msg)=$msg{$fr_addr};
-      for my $to_addr(sort keys %msg) {
-        local(*msg)=$msg{$to_addr};
-        next unless $filt{fr_addr(\%msg)} or $filt{to_addr(\%msg)};
-        eex(\%msg);
-      }
-    }
-  };
-  path("msgs.json")->spew(join("\n",@msg));
+    $total_sms += handle_sms($maildir, $data);
+    $total_mms += handle_mms($maildir, $data);
+  }
+
   warn "Done. SMS=$total_sms MMS=$total_mms  Maildir=$opt{maildir}\n";
 }
 main();

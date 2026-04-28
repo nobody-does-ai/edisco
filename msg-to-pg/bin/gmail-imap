@@ -9,17 +9,16 @@ BEGIN {
   local(@_) = "$Dir";
   s{dir/*$}{} for @_;
 };
-use Nobody::JSON;
+use Nobody::JSON qw(json);
 use Mail::IMAPClient;
 use IO::Socket::SSL;
 use Digest::MD5 qw(md5_hex);
+use Email::MIME;
+BEGIN {
+  $Email::MIME::ContentType::STRICT_PARAMS =0;
+};
 #gmail/rich.paul.freeman gmail/rich.private.paul
-push(@ARGV, qw(
-  gmail/rich.freeman.paul 
-  gmail/rich.paul.freeman
-  gmail/rich.private.paul
-  )
-) unless @ARGV;
+push(@ARGV, qw( gmail/rich.freeman.paul )) unless @ARGV;
 sub main(@);
 main(@ARGV);
 sub main(@) {
@@ -29,6 +28,7 @@ sub main(@) {
   my $dir = path($config->{maildir});
   $dir->child($_)->mkdir for qw(cur new tmp);
   my($idx_file)=$dir->child("index.json");
+  $idx_file->spew("{}") unless $idx_file->exists;
   my $idx = json->load($idx_file);
   $idx={} unless ref($idx);
   eex($idx);
@@ -40,8 +40,6 @@ sub main(@) {
 
   my $imap = imap($config);
   die "IMAP session was not created\n" unless $imap;
-
-
 
   clean_maildir_cur($idx, $dir->child('cur'));
   json->save($idx_file, $idx);
@@ -58,6 +56,7 @@ sub main(@) {
     log_msg(@{$config->{targets}} ? "Starting individual term searches..." : "No targets configured; searching ALL messages...");
 
     my @all_uids;
+    die "no targets!" unless @{$config->{targets}};
     if (@{$config->{targets}}) {
       foreach my $term (@{$config->{targets}}) {
         my $query = qq(TEXT "$term");
@@ -66,8 +65,9 @@ sub main(@) {
         push(@all_uids, @results);
       }
     } else {
-      @all_uids = $imap->search('ALL');
-      log_msg(sprintf("ALL: %d results", scalar @all_uids));
+      die "no targets!";
+#          @all_uids = $imap->search('ALL');
+#          log_msg(sprintf("ALL: %d results", scalar @all_uids));
     }
 
     @all_uids = uniq(@all_uids);
@@ -81,22 +81,23 @@ sub main(@) {
     for my $uid (@todo_uids) {
       my $raw = $imap->message_string($uid);
       unless ($raw) {
-        warn "Failed to fetch body for UID $uid: $@";
+        warn "Fetch failed: UID $uid: $@";
         next;
       }
-
-      my $md5 = md5_hex($raw);
-      my $base = canonical_mail_filename($md5);
-      my $cur_target = $dir->child('cur', $base);
-      my $new_target = $dir->child('new', $base);
 
       my $h = parse_headers_from_raw($raw);
       my $mid = $h->{'message-id'};
 
       unless ($mid) {
-        log_msg("WARNING: UID $uid has no Message-ID; skipping (md5=$md5).");
+        log_msg("WARNING: UID $uid has no Message-ID; skipping (md5=" . md5_hex($raw) . ").");
         next;
       }
+
+      my $cooked = cook_message($raw, $dir->child('inc'));
+      my $md5 = md5_hex($cooked);
+      my $base = mail_filename($md5);
+      my $cur_target = $dir->child('cur', $base);
+      my $new_target = $dir->child('new', $base);
 
       if (defined $idx->{messages}{$mid}) {
         $idx->{uids}{$uid} = $mid;
@@ -104,11 +105,11 @@ sub main(@) {
         if ($cur_target->exists || $new_target->exists) {
           next;
         }
-        log_msg("WARNING: index has $mid but cur/" . canonical_mail_filename($md5) . " is missing; restaging message from UID $uid.");
+        log_msg("WARNING: index has $mid but cur/$base is missing; restaging message from UID $uid.");
       }
 
       unless ($cur_target->exists || $new_target->exists) {
-        write_maildir_message($dir, $base, $raw);
+        write_maildir_message($dir, $cooked);
       }
 
       $idx->{messages}{$mid} = {
@@ -120,10 +121,9 @@ sub main(@) {
         subject => $h->{subject},
       };
       $idx->{uids}{$uid} = $mid;
-      json->save($idx_file, $idx);
       $added++;
-      log_msg("Downloaded $added new unique messages (staged in new/).");
-      last if $added > 250;
+      json->save($idx_file, $idx) unless $added %10;
+      log_msg("$added");
     }
 
     json->save($idx_file, $idx);
@@ -138,7 +138,7 @@ sub main(@) {
       my $bn = $p->basename;
       my $raw = $p->slurp_raw;
       my $md5 = md5_hex($raw);
-      my $canon = canonical_mail_filename($md5);
+      my $canon = mail_filename($md5);
 
       if ($bn ne $canon) {
         log_msg("WARNING: new/$bn altered or renamed (md5 is $md5). Deleting and dropping index entries.");
@@ -247,6 +247,43 @@ sub log_msg {
   say $loc[1], ":", $loc[2], ": ", sprintf("[%s] %s", serdate, "@_");
 }
 
+sub cook_message {
+  my ($raw, $incdir) = @_;
+  $incdir->mkdir;
+  my $email = Email::MIME->new($raw);
+  my $body = '';
+  my @att_files;
+
+  $email->walk_parts(sub {
+    my $part = shift;
+    return if $part->subparts;  # skip multipart containers
+    my $ct = $part->content_type // '';
+    $ct =~ s/;.*//;
+    $ct = lc($ct);
+    $ct =~ s/\s+//g;
+    if ($ct eq 'text/plain') {
+      my $text = eval { $part->body_str } // $part->body;
+      $body .= ($body eq '' ? '' : "\n\n") . $text;
+    } else {
+      my $fn = save_attachment($incdir, $ct, $part->body);
+      push @att_files, $fn if defined $fn;
+    }
+  });
+
+  my $h = parse_headers_from_raw($raw);
+  my $cooked = emit_email(
+    from    => $h->{from},
+    to      => $h->{to},
+    date    => $h->{date},
+    mid     => $h->{'message-id'},
+    subject => $h->{subject},
+    body    => $body,
+    xhdrs   => [map { "X-Attachment: $_" } @att_files],
+  );
+  utf8::encode(my $bytes = $cooked);
+  return $bytes;
+}
+
 sub parse_headers_from_raw {
   my ($raw) = @_;
   my %h;
@@ -304,19 +341,6 @@ sub drop_message_by_mid {
   delete $idx->{messages}{$mid};
 }
 
-sub canonical_mail_filename {
-  die "usage: canonical_mail_filename (md5)" unless @_==1;
-  my ($md5) = @_;
-  return "$md5.eml";
-}
-
-sub md5_from_filename {
-  die "md5_from_filename (filename)" unless @_==1;
-  my ($filename) = @_;
-  return unless defined $filename;
-  return $1 if $filename =~ /\A([0-9a-f]{32})(?:\.eml)?\z/;
-  return;
-}
 
 sub drop_messages_by_md5_filename {
   die "drop_messages_by_md5_filename(idx,fname_md5)" unless @_==1;
@@ -341,7 +365,7 @@ sub clean_maildir_cur {
 
     my $raw = $p->slurp_raw;
     my $md5 = md5_hex($raw);
-    my $canon = canonical_mail_filename($md5);
+    my $canon = mail_filename($md5);
 
     if ($bn eq $canon) {
       next;
@@ -367,7 +391,7 @@ sub clean_maildir_cur {
   my %have = map { $_->basename => 1 } grep { -f $_ && $_->basename !~ /^\./ } $cur_dir->children;
   for my $mid (keys %{$idx->{messages}}) {
     my $r = $idx->{messages}{$mid} || next;
-    my $m = canonical_mail_filename($r->{md5} // next);
+    my $m = mail_filename($r->{md5} // next);
     next if $have{$m};
     log_msg("WARNING: index references missing cur/$m for $mid; leaving index record intact.");
   }
