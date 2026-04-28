@@ -4,7 +4,7 @@ use warnings;
 use common::sense;
 use lib "lib";
 use Nobody::Util;
-use Maildir;
+use MsgDir;
 BEGIN {
   local(@_) = "$Dir";
   s{dir/*$}{} for @_;

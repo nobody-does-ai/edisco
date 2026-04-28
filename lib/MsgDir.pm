@@ -1,4 +1,4 @@
-package Maildir;
+package MsgDir;
 use strict;
 use warnings;
 use Nobody::Util;

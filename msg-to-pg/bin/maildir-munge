@@ -1,0 +1,104 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use File::Find;
+use File::Basename;
+use Digest::MD5 qw(md5_hex);
+use POSIX qw(strftime);
+use Time::Local qw(timegm);
+
+my $DIR = shift @ARGV or die "usage: $0 MSGDIR\n";
+
+find({ no_chdir => 1, wanted => sub {
+    my $path = $File::Find::name;
+    my $file = $_;
+
+    return if -d $path;
+    return unless $file =~ /^([0-9a-fA-F]{32})\.eml$/i;
+    return unless -s $path;
+
+    my $raw = slurp($path) // return;
+
+    # Extract headers we need
+    my ($from_addr) = $raw =~ /^Return-Path:\s*<([^>]+)>/mi;
+    unless ($from_addr) {
+        ($from_addr) = $raw =~ /^From:\s*.*?([A-Z0-9._%+\-]+\@[A-Z0-9.\-]+\.[A-Z]{2,})/mi;
+    }
+    $from_addr //= 'MAILER-DAEMON';
+
+    my ($date_str) = $raw =~ /^Date:\s*(.+)$/mi;
+    $date_str =~ s/\s+$// if defined $date_str;
+
+    my $epoch = defined $date_str ? parse_mail_date($date_str) : undef;
+    $epoch //= (stat($path))[9];
+
+    # Build new basename: yyyy-mm-dd-HHMMSS-MD5.eml
+    my $stamp   = strftime('%Y-%m-%d-%H%M%S', gmtime($epoch));
+    my $md5     = lc md5_hex($raw);
+    my $newname = "$stamp-$md5.eml";
+    my $newpath = File::Basename::dirname($path) . "/$newname";
+
+    # Rewrite From_ line if it's wrong
+    my $from_line_time = strftime('%a %b %d %H:%M:%S %Y', localtime($epoch));
+    my $correct_from   = "From $from_addr $from_line_time\n";
+
+    my $updated = $raw;
+    if ($updated =~ s/^From [^\n]*\n/$correct_from/) {
+        # replaced existing From_ line
+    } else {
+        $updated = $correct_from . $updated;
+    }
+
+    # Write updated content back (to new filename)
+    if ($newpath ne $path) {
+        open my $fh, '>', $newpath or warn "write $newpath: $!\n" and return;
+        binmode $fh, ':raw';
+        print $fh $updated;
+        close $fh;
+        unlink $path;
+        print "renamed: $file -> $newname\n";
+    } else {
+        # Same name (unlikely but safe)
+        open my $fh, '>', $path or warn "write $path: $!\n" and return;
+        binmode $fh, ':raw';
+        print $fh $updated;
+        close $fh;
+        print "updated From_ only: $file\n";
+    }
+
+}}, $DIR);
+
+sub slurp {
+    my ($p) = @_;
+    open my $fh, '<', $p or return undef;
+    binmode $fh, ':raw';
+    local $/; my $d = <$fh>; close $fh;
+    return $d;
+}
+
+sub parse_mail_date {
+    my ($s) = @_;
+    $s =~ s/\([^)]*\)//g; $s =~ s/\s+/ /g; $s =~ s/^\s+|\s+$//g;
+    my %mon = (Jan=>0,Feb=>1,Mar=>2,Apr=>3,May=>4,Jun=>5,
+               Jul=>6,Aug=>7,Sep=>8,Oct=>9,Nov=>10,Dec=>11);
+    if ($s =~ /^(?:\w{3},\s+)?(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s+([+-]\d{4}|[A-Z]{1,5})$/) {
+        my ($mday,$mon_txt,$year,$hh,$mm,$ss,$tz) = ($1,$2,$3,$4,$5,$6//0,$7);
+        $year += 2000 if $year < 70;
+        $year += 1900 if $year >= 70 && $year < 100;
+        return undef unless exists $mon{$mon_txt};
+        my $off = tz_offset($tz) // return undef;
+        return eval { timegm($ss,$mm,$hh,$mday,$mon{$mon_txt},$year) - $off };
+    }
+    return undef;
+}
+
+sub tz_offset {
+    my ($tz) = @_;
+    return 0 if $tz =~ /^(?:UT|UTC|GMT)$/;
+    my %n = (EST=>-18000,EDT=>-14400,CST=>-21600,CDT=>-18000,
+             MST=>-25200,MDT=>-21600,PST=>-28800,PDT=>-25200);
+    return $n{$tz} if exists $n{$tz};
+    return undef unless $tz =~ /^([+-])(\d{2})(\d{2})$/;
+    my $off = $2*3600 + $3*60;
+    return $1 eq '+' ? $off : -$off;
+}
